@@ -1,0 +1,3 @@
+[submodule "jscl"]
+	path = jscl
+	url = https://github.com/jscl-project/jscl.git
