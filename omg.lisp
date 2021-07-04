@@ -52,7 +52,7 @@
 ;; Loading and compiling JSCL
 (defparameter *jscl-js* (make-array '(0) :element-type 'base-char :fill-pointer 0 :adjustable t)) ;; JSCL JS code here
 
-(load "jscl/jscl.lisp")
+(load (merge-pathnames (make-pathname :directory '(:relative "jscl") :name "jscl.lisp") (make-pathname :directory (pathname-directory *load-pathname*))))
 (in-package :jscl)
 
 ;; Adopted from jscl.lisp:
