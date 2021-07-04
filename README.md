@@ -5,7 +5,7 @@
 The main idea of this library is to vanish a border between frontend and backend as much as possible. You can develop a CL application using REPL and SLIME on a backend, but some of you functions and macros can be declared as _browser-side_ (_b-s_) with `defun-f` and `defmacro-r` respectively:
 
 ```
-(defun-r js-add (x y))
+(defun-r js-add (x y)
   (+ x y) ;; this code will be executed in a browser
 ```
 
