@@ -104,6 +104,17 @@
 
 (defparameter *in-f-macro* nil)   ;; If T -- do not convert -f function calls to (remote-exec ...) (don't change manually!!!)
 
+(defmacro defun-r (name args &rest body)
+  "Define a server-side function and allow to call it from browser side"
+  (remhash name *exportable-expressions*)
+  (setf (gethash name *rpc-functions*) t)
+  (setf (gethash name *exportable-expressions*)
+       `(defun ,name (&rest argl)
+          (funcall (jscl::oget (jscl::%js-vref "jscl") "omgRPC")
+                   (write-to-string (list ,(package-name *package*)
+                                          ',name
+                                          argl)))))
+  `(defun ,name ,args ,@body))
 (defun f-eval (arg)
   "Smart-eval -- evaluate everything, but expotrable expressions, lambdas and function names"
   (if (and (symbolp arg) (boundp arg) (gethash arg *exportable-expressions*))
@@ -150,19 +161,6 @@
 (make-var-macro-f defvar)       ;; defvar-f
 (make-var-macro-f defparameter) ;; defparameter-f
 (make-var-macro-f defconstant)  ;; defconstant-f
-
-(defmacro defun-r (name args &rest body)
-  "Define a server-side function and allow to call it from browser side"
-  (remhash name *exportable-expressions*)
-  (setf (gethash name *rpc-functions*) t)
-  (setf (gethash name *exportable-expressions*)
-       `(defun ,name (&rest argl)
-          (funcall (jscl::%js-vref "omgRPC")
-                   (write-to-string (list ,(package-name *package*)
-                                          ',name
-                                          argl)))))
-  `(defun ,name ,args ,@body))
-
 
 (defun get-root-html ()
   "Return a somple HTML with JS injected."
@@ -258,7 +256,7 @@ jscl.internals.intern=(name, package_name)=>{
   return sym
 }
 
-const omgRPC=(cmd)=>{
+jscl.omgRPC=(cmd)=>{
   const xhr=new XMLHttpRequest()
   xhr.open('POST', omgBase+'" *root-path* "/" *rpc-path* "', false)
   xhr.send(cmd)
