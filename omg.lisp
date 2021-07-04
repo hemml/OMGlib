@@ -104,6 +104,11 @@
 
 (defparameter *in-f-macro* nil)   ;; If T -- do not convert -f function calls to (remote-exec ...) (don't change manually!!!)
 
+(defvar *exported-function-names* nil) ;; association list where browser-side functions associated with their names
+
+(defvar *local-lambdas* (make-hash-table)) ;; list of unnamed functions, passed as arguments to browser-side ones
+                                           ;; used by exec-local-lambda RPC-function to determine what lambda to execute
+
 (defmacro defun-r (name args &rest body)
   "Define a server-side function and allow to call it from browser side"
   (remhash name *exportable-expressions*)
@@ -115,12 +120,48 @@
                                           ',name
                                           argl)))))
   `(defun ,name ,args ,@body))
+
+(defun-r exec-local-lambda (idargs)
+  (let ((h (gethash (car idargs) *local-lambdas*)))
+    (if h
+        (apply h (cdr idargs))
+        nil))) ;; return nil if function not found. FIXME: must return an error object!
+
 (defun f-eval (arg)
   "Smart-eval -- evaluate everything, but expotrable expressions, lambdas and function names"
-  (if (and (symbolp arg) (boundp arg) (gethash arg *exportable-expressions*))
-      arg
-      (let ((dat (eval arg)))
-        (if (functionp dat) arg dat))))
+  (print arg)
+  (cond ((and (symbolp arg) (or (boundp arg) (fboundp arg)) (gethash arg *exportable-expressions*))
+         arg)
+        ((and (consp arg)
+              (equal (car arg) 'function) ;; in-browser function name
+              (gethash (cadr arg) *exportable-expressions*))
+         arg)
+        ((and (listp arg) (fboundp (car arg)))
+         (cond ((equal (car arg) 'lambda) ;; lambdas are always evaluates in browser
+                arg)
+               ((gethash (car arg) *exportable-expressions*) ;; browser-side function
+                (cons (car arg) (mapcar #'f-eval (cdr arg))))
+               ((equal (car arg) 'CONS)
+                `(quote (,(f-eval (cadr arg)) . (f-eval (caddr arg)))))
+               ((equal (car arg) 'LIST)
+                `(list ,@(mapcar #'f-eval (cdr arg))))
+               ((equal (car arg) 'QUOTE)
+                `(quote ,(mapcar #'f-eval (cadr arg))))
+               (t (let ((res (eval (cons (car arg) (mapcar #'f-eval (cdr arg))))))
+                    (if (listp res)
+                        (list 'quote (mapcar #'f-eval res))
+                        (f-eval res))))))
+        ((and (symbolp arg) (boundp arg))
+         (eval arg))
+        ((functionp arg)
+         (let ((f (assoc arg *exported-function-names*)))
+           (if f
+               `(symbol-function (quote ,(cdr f)))  ;; browser-side function
+               (let ((id (random-key *local-lambdas*)))
+                 (warn "Passing a local function as a parameter of browser-side function is dangerous!")
+                 (setf (gethash id *local-lambdas*) arg)
+                 `(lambda (&rest args) (exec-local-lambda (cons ',id args)))))))
+        (t arg)))
 
 (defmacro make-def-macro-f (op)
   "Just a macro to generate macros for f-functions and f-macros definintions (defun-f, defmacro-f, etc...)"
@@ -141,7 +182,9 @@
             (if *in-f-macro*
                `',(cons ',name (mapcar #'f-eval args))
                (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
-                  `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))))))
+                  `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
+         (if (not (assoc (function ,name) *exported-function-names*))
+             (setf *exported-function-names* (cons (cons (function ,name) ',name) *exported-function-names*))))))) ;; It is strange, but PUSH causes error here!
 
 (defmacro make-var-macro-f (op)
   "A macro for variables-parameters-constants definitions"
