@@ -22,7 +22,7 @@ or just open a page <http://localhost/> (a blank page with js-injection code).
 Now you call a browser-side function, just executing it in REPL, for example:
 
 ```
-CL-USER> (js-add 1 2)
+MYTEST> (js-add 1 2)
 ;; (3)
 ```
 
