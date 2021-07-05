@@ -8,7 +8,7 @@ The main idea of this library is to vanish a border between frontend and backend
 (defpackage mytest (:use cl omg))
 (in-package :mytest)
 (defun-r js-add (x y)
-  (+ x y) ;; this code will be executed in a browser
+  (+ x y)) ;; this code will be executed in a browser
 ```
 
 The `(start-server)` function starts `clack` web server on default port 7500 (can be changed by setting `omg::*port*` variable). Now, in the html-code you can inject the following line:
