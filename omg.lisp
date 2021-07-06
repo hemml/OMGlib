@@ -1,19 +1,19 @@
-
 (defpackage :omg
-  (:import-from :event-emitter
-                #:emit)
-  (:export start-server
-           kill-server
-           restart-server
-           defun-f
-           defmacro-f
-           defvar-f
-           defparameter-f
-           defun-r
-           remote-exec
-           with-session
-           find-session))
   (:use cl clack websocket-driver bordeaux-threads trivial-utf-8)
+  (:import-from :event-emitter #:emit)
+  (:export add-to-boot       ;; add a code to boot sequence
+           rm-from-boot      ;; remove a code from boot sequence
+           start-server      ;; start a http(s)-server
+           kill-server       ;; kill a http(s)-server
+           restart-server    ;; restart a http(s)-server
+           defun-f           ;; define a browser-side function
+           defmacro-f        ;; define a browser-side macro
+           defvar-f          ;; define a browser-side variable
+           defparameter-f    ;; define a browser-side parameter
+           defun-r           ;; define a RPC-function
+           remote-exec       ;; execute a code in browser(s)
+           with-session      ;; execute e code block on the specific browser
+           find-session))    ;; find session object by ID
 
 (in-package :omg)
 
@@ -527,9 +527,18 @@ if(document.readyState==='complete') {
         (exec)
         (loop for s being the hash-values of *session-list* collect (with-session s (exec))))))
 
+(defparameter *boot-functions* nil)
+
+(defun add-to-boot (f)
+  (push f *boot-functions*))
+
+(defun rm-from-boot (f)
+  (delete f *boot-functions*))
+
 (defun boot-f ()
   "The boot code, will be executed on the browser-side just after the socket is connected."
-  (remote-exec `(defparameter *session-id* ',(get-id *current-session*)) :nowait))
+  (remote-exec `(defparameter *session-id* ',(get-id *current-session*)) :nowait)
+  (map nil (lambda (f) (remote-exec f :nowait)) *boot-functions*))
 
 (defun make-ws (env)
   "Return the websocket for the new session. Also, creates the session object."
