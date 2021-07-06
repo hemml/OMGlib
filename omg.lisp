@@ -1,6 +1,3 @@
-(require "clack")
-(require "websocket-driver-server")
-(require "bordeaux-threads")
 
 (defpackage :omg
   (:use cl clack websocket-driver bordeaux-threads)
@@ -27,18 +24,18 @@
 
 ;; Here are the paths for all HTTP(s) queries (the page reload required after change):
 
-(defvar *root-path* "") ;; must be started with "/"
-(defvar *html-path* "") ;; the path (relative to *root-path*) for simple html page with injcetced js
-(defvar *js-path* "j")  ;; the path of js for injection (relative to *root-path*)
-(defvar *ws-path* "s")  ;; websocket path (relative to *root-path*)
-(defvar *rpc-path* "r") ;; rpc call path (relative to *root-path*)
-(defvar *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
-(defvar *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
-(defvar *port* 7500) ;; default server port
+(defparameter *root-path* "") ;; must be started with "/"
+(defparameter *html-path* "") ;; the path (relative to *root-path*) for simple html page with injcetced js
+(defparameter *js-path* "j")  ;; the path of js for injection (relative to *root-path*)
+(defparameter *ws-path* "s")  ;; websocket path (relative to *root-path*)
+(defparameter *rpc-path* "r") ;; rpc call path (relative to *root-path*)
+(defparameter *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
+(defparameter *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
+(defparameter *port* 7500) ;; default server port
 
-(defvar *use-wss* nil) ;; if T -- use wss:// protocol for websocket
-(defvar *ssl-key* nil) ;; SSL key path
-(defvar *ssl-cert* nil) ;; SSL cert path
+(defparameter *use-wss* nil) ;; if T -- use wss:// protocol for websocket
+(defparameter *ssl-key* nil) ;; SSL key path
+(defparameter *ssl-cert* nil) ;; SSL cert path
 
 ;; If we have both SSL key and SSL cert, start server with SSL support
 (defun has-ssl-p () (and *ssl-key* *ssl-cert*))
@@ -93,24 +90,23 @@
         (random-key h len)
         k)))
 
-(defvar *exportable-expressions* (make-hash-table)) ;; All exportable functions are here
-(defvar *rpc-functions* (make-hash-table))          ;; The allowed RPC functions registry
-(defvar *gimme-wait-list* (make-hash-table))        ;; The temporary storage for gimme-threads,
+(defparameter *exportable-expressions* (make-hash-table)) ;; All exportable functions are here
+(defparameter *rpc-functions* (make-hash-table))          ;; The allowed RPC functions registry
+(defparameter *gimme-wait-list* (make-hash-table))        ;; The temporary storage for gimme-threads,
                                                     ;;   waiting compilation results
                                                     ;; FIXME: periodic cleanup procedure needed!
-(defvar *takit-wait-list* (make-hash-table))        ;; The temporary storage for compilation threads,
+(defparameter *takit-wait-list* (make-hash-table))        ;; The temporary storage for compilation threads,
                                                     ;;   waiting for macro expansion results from browser side
                                                     ;; FIXME: periodic cleanup procedure needed!
 
 (defparameter *in-f-macro* nil)   ;; If T -- do not convert -f function calls to (remote-exec ...) (don't change manually!!!)
 
-(defvar *exported-function-names* nil) ;; association list where browser-side functions associated with their names
+(defparameter *exported-function-names* nil) ;; association list where browser-side functions associated with their names
 
-(defvar *local-lambdas* (make-hash-table)) ;; list of unnamed functions, passed as arguments to browser-side ones
+(defparameter *local-lambdas* (make-hash-table)) ;; list of unnamed functions, passed as arguments to browser-side ones
                                            ;; used by exec-local-lambda RPC-function to determine what lambda to execute
 
-(defmacro defun-r (name args &rest body)
-  "Define a server-side function and allow to call it from browser side"
+(defun register-rpc (name)
   (remhash name *exportable-expressions*)
   (setf (gethash name *rpc-functions*) t)
   (setf (gethash name *exportable-expressions*)
@@ -118,8 +114,13 @@
           (funcall (jscl::oget (jscl::%js-vref "jscl") "omgRPC")
                    (write-to-string (list ,(package-name *package*)
                                           ',name
-                                          argl)))))
-  `(defun ,name ,args ,@body))
+                                          argl))))))
+
+(defmacro defun-r (name args &rest body)
+  "Define a server-side function and allow to call it from browser side"
+  `(progn
+     (register-rpc ',name)
+     (defun ,name ,args ,@body)))
 
 (defun-r exec-local-lambda (idargs)
   (let ((h (gethash (car idargs) *local-lambdas*)))
@@ -213,7 +214,7 @@
 
 (defun get-main-js ()
   "Return the JS code, including JSCL and OMG parts glued."
-  (concatenate 'string "(()=>{" *jscl-js* "
+  (concatenate 'string "(()=>{" jscl::*jscl-js* "
 const omgURL=new URL(document.currentScript.src)
 const omgPath=omgURL.pathname.replace(/\\/[^\\\/]+$/,'')
 const omgHostPath=(omgURL.username?(omgURL.username+
@@ -372,8 +373,8 @@ if(document.readyState==='complete') {
 "))
 
 (defparameter *current-session* nil)       ;; The current session, usually set by remote-exec
-(defvar *session-list* (make-hash-table))  ;; The store for session objects, keys are session-ids
-(defvar *current-res* nil) ;; The key for gimme-wait-list hash, denotes the place where to store result for
+(defparameter *session-list* (make-hash-table))  ;; The store for session objects, keys are session-ids
+(defparameter *current-res* nil) ;; The key for gimme-wait-list hash, denotes the place where to store result for
                            ;;   current gimme request
 
 (defclass omg-session ()
