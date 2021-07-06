@@ -90,7 +90,8 @@
           (funcall (jscl::oget (jscl::%js-vref "jscl") "omgRPC")
                    (write-to-string (list ,(package-name *package*)
                                           ',name
-                                          argl))))))
+                                          argl
+                                          *session-id*))))))
 
 (defmacro defun-r (name args &rest body)
   "Define a server-side function and allow to call it from browser side"
@@ -599,7 +600,8 @@ if(document.readyState==='complete') {
            (let* ((cmd (read-from-string (get-str-from (getf env :raw-body) (getf env :content-length))))
                   (pkg (find-package (car cmd)))
                   (op (intern (symbol-name (cadr cmd)) pkg))
-                  (args (caddr cmd)))
+                  (args (caddr cmd))
+                  (*current-session* (find-session (intern (symbol-name (cadddr cmd)) :omg))))
               (if (gethash op *rpc-functions*)
                 (let ((res (apply op args)))
                   `(200 (:content-type "text/plain; charset=utf-8")
