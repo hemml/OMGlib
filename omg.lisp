@@ -1,6 +1,5 @@
 
 (defpackage :omg
-  (:use cl clack websocket-driver bordeaux-threads)
   (:import-from :event-emitter
                 #:emit)
   (:export start-server
@@ -14,6 +13,7 @@
            remote-exec
            with-session
            find-session))
+  (:use cl clack websocket-driver bordeaux-threads trivial-utf-8)
 
 (in-package :omg)
 
@@ -573,6 +573,12 @@ if(document.readyState==='complete') {
         (unintern sid)))
     ws))
 
+(defun get-str-from (s len)
+  (let ((*read-eval* nil)
+        (tseq (make-array (list len) :element-type '(unsigned-byte 8))))
+    (read-sequence tseq s)
+    (utf-8-bytes-to-string tseq)))
+
 (defun serv (env)
   (let ((uri (getf env :REQUEST-URI)))
     (cond ((equal uri (concatenate 'string *root-path* "/" *js-path*))
@@ -582,7 +588,7 @@ if(document.readyState==='complete') {
           ((equal uri (concatenate 'string *root-path* "/" *html-path*))
            `(200 (:content-type "text/html; charset=utf-8") (,(get-root-html))))
           ((equal uri (concatenate 'string *root-path* "/" *rpc-path*))
-           (let* ((cmd (let ((*read-eval* nil)) (read-from-string (read-line (getf env :raw-body)))))
+           (let* ((cmd (read-from-string (get-str-from (getf env :raw-body) (getf env :content-length))))
                   (pkg (find-package (car cmd)))
                   (op (intern (symbol-name (cadr cmd)) pkg))
                   (args (caddr cmd)))
@@ -592,12 +598,12 @@ if(document.readyState==='complete') {
                         (,(write-to-string res))))
                `(404 (:content-type "text/plain; charset=utf-8") ("")))))
           ((equal uri (concatenate 'string *root-path* "/" *gimme-path*))
-           (let* ((str (read-line (getf env :raw-body)))
+           (let* ((str (get-str-from (getf env :raw-body) (getf env :content-length)))
                   (pos (position #\: str))
                   (pkg (find-package (subseq str 0 pos))))
              (gimme (intern (subseq str (+ 1 pos)) pkg))))
           ((equal uri (concatenate 'string *root-path* "/" *takit-path*))
-           (let* ((str (read-line (getf env :raw-body))))
+           (let* ((str (get-str-from (getf env :raw-body) (getf env :content-length))))
              (takit (intern (subseq str 0 |sid-length|) :omg)
                     (subseq str |sid-length|))))
           ((equal uri (concatenate 'string *root-path* "/" *ws-path*))
