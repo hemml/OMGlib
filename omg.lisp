@@ -13,7 +13,10 @@
            defun-r           ;; define a RPC-function
            remote-exec       ;; execute a code in browser(s)
            with-session      ;; execute e code block on the specific browser
-           find-session))    ;; find session object by ID
+           find-session      ;; find session object by ID
+           current-session-id  ;; get ID of current session (returns NIL if no session)
+           set-debug-session  ;; mark current session as "debug"
+           in-debug-session)) ;; execute code in debug session
 
 (in-package :omg)
 
@@ -353,6 +356,10 @@ if(document.readyState==='complete') {
 (defparameter *current-res* nil) ;; The key for gimme-wait-list hash, denotes the place where to store result for
                            ;;   current gimme request
 
+(defun current-session-id ()
+  (if *current-session*
+      (get-id *current-session*)))
+
 (defclass omg-session ()
   ((socket :initarg :socket
            :initform (error "socket required")
@@ -372,6 +379,19 @@ if(document.readyState==='complete') {
   "Execute commands inside session sess"
   `(let ((*current-session* ,sess))
       ,@body))
+
+(defparameter *debug-session-id* nil)
+
+(defun set-debug-session (sid)
+  (setf *debug-session-id* sid))
+
+(defmacro in-debug-session (&rest body)
+  (let ((ses (gensym)))
+    `(let ((,ses (find-session *debug-session-id*)))
+       (if ,ses
+           (with-session ,ses
+             ,@body)
+           (warn "Cannot find debug session!")))))
 
 (defun remote-unintern (sym)
   "Unintern the symbol within all active sessions, mandatory to reflect symbol redefinition.
