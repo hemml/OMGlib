@@ -106,7 +106,6 @@
 
 (defun f-eval (arg)
   "Smart-eval -- evaluate everything, but expotrable expressions, lambdas and function names"
-  (print arg)
   (cond ((and (symbolp arg) (or (boundp arg) (fboundp arg)) (gethash arg *exportable-expressions*))
          arg)
         ((and (consp arg)
