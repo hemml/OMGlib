@@ -3,7 +3,7 @@
   :version "0.1.0"
   :author "Pavel Kaygorodov <hemml@me.com>"
   :licence "GPLv3"
-  :depends-on ("clack" "websocket-driver-server" "bordeaux-threads")
+  :depends-on ("clack" "websocket-driver-server" "bordeaux-threads" "trivial-utf-8")
   :components ((:static-file "README.md")
                (:static-file "LICENSE")
                (:file "omg")
