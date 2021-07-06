@@ -22,7 +22,6 @@
            jsmax
            jsmin
            jsrandom
-           js-string-split
            load-js-script
            make-dialog
            make-js-function

@@ -5,6 +5,7 @@
 The main idea of this library is to vanish a border between frontend and backend as much as possible. You can develop a CL application using REPL and SLIME on a backend, but some of you functions and macros can be declared as _browser-side_ (_b-s_) with `defun-f` and `defmacro-r` respectively:
 
 ```
+(require :omg)
 (defpackage mytest (:use cl omg))
 (in-package :mytest)
 (defun-r js-add (x y)
@@ -28,6 +29,93 @@ MYTEST> (js-add 1 2)
 
 The function call will be converted to javascript with [JSCL](https://github.com/jscl-project/jscl) and sent to the browser via websocket, where the code will be executed and result will be returned to the backend. The result in this example will be returned as a list, because we are not specified a session (see below) and the code will be executed in _all_ connected browsers, and the list of result values will be returned.
 
+The more complicated example you can find in in _example.lisp_ file, where `omgui` package is used to manipulate DOM objects.
+
+## OMGUI package
+
+`OMG` package is all-sufficient and can be used as is to control a frontend. You can execute any JS code on the browser-side using [JSCL](https://github.com/jscl-project/jscl) FFI:
+
+```
+(defun-f jslog (&rest args) ;; call console.log(...args)
+  "Log function for js"
+  (apply (jscl::oget (jscl::%js-vref "console") "log") args)
+  nil)
+```
+
+But many of useful JS and DOM-manipulating functions are provided by `omgui` package, where you can find the following functions:
+
+- `(create-element type ...attrs)` - create and return a DOM element (like `document.createElement()`). You can provide attributes in JS notation. For example:
+
+  ```
+  (create-element "div" :|innerHTML| "Some text" :|style.fontWeight| "lighter")
+  ```
+
+- `(append-element element &optional parent)` - append DOM `element` as a child to the `parent`. If the `parent` is omitted, the element will be appended to `document`.
+
+- `(check-element ID)` - check if DOM element with `ID` exists.
+
+- `(remove-element element)` - remove `element` from DOM.
+
+- `(element-width)` `(element-height)` - return `element` dimensions in pixels.
+
+- `(get-element-id element)` - return DOM ID of the `element`. If the element has no ID, a random ID will be created and assigned to it.
+
+- `(js-get-element-by-id ID)` - get DOM element by `ID`
+
+- `(parent-element element)` returns a parent of DOM `element`
+
+- `(page-width)` `(page-height)` `(visible-width)` `(visible-height)` `(visible-left)` `(visible-top)` - get browser page dimensions.
+
+- `(execute-after time callback)` - execute the `(callback)` after `time`, where `time` specified in seconds.
+
+- `(jsfloor num)` `(jsmax ...nums)` `(jsmin ...nums)` `(jsrandom)` - JS Math functions `Math.floor()`, `Math.max()`, `Math.min()` and `Math.random()`.
+
+- `(jslog ...args)` - wrapper for `console.log()`
+
+- `(prevent-page-close)` `(allow-page-close)` - prevent and allow page closing.
+
+- `(disable-back-button)` `(enable-back-button)` - disable/enable "back" button in browser.
+
+- `(disable-scroll)` `(enable-scroll)` - disable/enable page scroll.
+
+- `(make-js-object :attr1 value1 attr2 value2 ...)` - return a JS dict object with specefied keys and values.
+
+- `(make-js-function name lambda)` - create an JS function from `lambda` which can be accesssed via `window.name`
+
+- `(load-js-script url)` - load JS script from `url`.
+
+### Modal dialogs
+
+You can display modal dialog in the browser using the `modal-dialog` macro:
+
+```
+(in-debug-session
+  (print (modal-dialog "Dialog header"
+                       "Dialog text"))
+                       :lines (list :line1 "field 1"
+                                    :line2 "field 2"
+                                    :buttons (list (list "OK" #'dialog-ok)
+                                                   (list "Cancel" #'close-current-dialog))))
+;; ((:line1 "Text in the line 1"))
+    (:line2 "Text in the line 2")
+```
+
+This code will display a modal dialog in debug session and print the result, returned as a `plist` or `nil` if the `Cancel` button was pressed.
+
+You can provide validation functions for input lines in the form `... :line1 (list "field1" #'func)`, where `#'func` can be a browser-side or RPC function. Also you can provide `(lambda (s) ...)` as a validator function, but you will get a security warning. The function must accept a string as an argument and return an (optionally) modified string which will replace the string in the input field. See the _example.lisp_.
+
+You callbacks can use the following supplementary functions:
+
+- `(close-current-dialog)` - close current modal dialog, `modal-dialog` will return `nil`.
+
+- `(dialog-ok)` - close current modal dialog, `modal-dialog` will return data entered in fields.
+
+- `(get-dialog-data)` - returns `plist` with dialog data, can be called anytime on frontend or backend.
+
+### Yotube player
+
+- `(add-youtube-player element &key onready onstatechange onqualitychange onratechange onerror onapichange width height video-id)` - add YouTube player on the page. The `video-id` is a string with YouTube video ID; `element` must be parent element for the player; `width` and `height` -- player dimensions; `onready`, `onstatechange`, `onqualitychange`, `onratechange`, `onerror` and `onapichange` - the callbacks. See the `example.lisp`.
+
 ## Restrictions
 
 - **All browser-side functions must be declared in your own package(s), not in CL-USER.** See [How it works](#how-it-works) for details.
@@ -46,6 +134,8 @@ The function call will be converted to javascript with [JSCL](https://github.com
   This is because the CL macros cannot distinct function calls and lists, constructed by quotation and quasiquotations. The second line will be threated as `(some-bs-function (a b c))`.
 
 - CLOS on browser-side is not implemented yet. And there may be some fundamental difficulties to implement it (see [How it works](#how-it-works) section).
+
+- There is no error propagation yet between browser and backend. If bs-function causes a error, `nil` will be returned.
 
 ## How it works
 
@@ -101,6 +191,31 @@ Each connected browser starts a new _session_ which is determined by unique rand
 ```
 
 If you are executing bs-function without session, it will be executed in **ALL** connected browsers and a list of results will be returned.
+
+The library provides some other utility functions to work with sessions:
+
+- `(set-debug-session session)` - execute this function to mark specific _session_ as **debug**.
+- `(in-debug-session code)` - execute a code in the debug session. If there are no active debug session a warning will be printed and code will not executed.
+
+### Boot functions
+
+Just after connection, the some boot code will be executed in browser. You can control this using the following functions:
+
+- `(add-to-boot code)` - add some code to boot sequence. This function can be called more then once to to codes which will be executed sequentally in the order of addition. The code must be a lisp form, for _example:
+
+  ```
+  (add-to-boot '(jslog "Hi!")) ;; print "Hi!" to JS console.
+  ```
+
+  If you want to execute some backend code, use RPC call:
+
+  ```
+  (defun-r my-boot ()
+    (print "New browser is connected!")
+    (set-debug-session (current-session-id))) ;; Mark the session as debug
+  ```
+
+- `(rm-from-boot code)` - remove code from boot sequence.
 
 ### REMOTE-EXEC function
 
