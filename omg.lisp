@@ -403,7 +403,7 @@ if(document.readyState==='complete') {
 
 (defun compile-to-js (code pkg &optional reskey)
   "Return JS for the code, pkg is current package for compilation context.
-   The reskey is is the *gimme-wait-list* key, the place to store compilation result."
+   The reskey is the *gimme-wait-list* key, the place to store compilation result."
   (let* ((*package* pkg)
          (c1 (write-to-string
                `(let ((*package* (find-package (intern ,(package-name pkg) :keyword))))
