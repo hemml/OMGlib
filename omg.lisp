@@ -126,7 +126,7 @@
                ((equal (car arg) 'LIST)
                 `(list ,@(mapcar #'f-eval (cdr arg))))
                ((equal (car arg) 'QUOTE)
-                `(quote ,(mapcar #'f-eval (cadr arg))))
+                arg)
                (t (let ((res (eval (cons (car arg) (mapcar #'f-eval (cdr arg))))))
                     (if (listp res)
                         (list 'quote (mapcar #'f-eval res))
