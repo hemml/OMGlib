@@ -46,30 +46,6 @@
 
 (start-multiprocessing) ;; bordeaux-threads requirement
 
-;; Loading and compiling JSCL
-(defparameter *jscl-js* (make-array '(0) :element-type 'base-char :fill-pointer 0 :adjustable t)) ;; JSCL JS code here
-
-(load (merge-pathnames (make-pathname :directory '(:relative "jscl") :name "jscl.lisp") (make-pathname :directory (pathname-directory *load-pathname*))))
-(in-package :jscl)
-
-;; Adopted from jscl.lisp:
-(let ((*features* (list* :jscl :jscl-xc *features*))
-      (*package* (find-package "JSCL"))
-      (*default-pathname-defaults* *base-directory*))
-  (setq *environment* (make-lexenv))
-  (with-compilation-environment
-    (with-output-to-string (out omg::*jscl-js*)
-      (format out "(function(){~%")
-      (format out "'use strict';~%")
-      (write-string (read-whole-file (source-pathname "prelude.js")) out)
-      (do-source input :target
-        (!compile-file input out :print nil))
-      (dump-global-environment out)
-      (!compile-file "src/toplevel.lisp" out :print nil)
-      (format out "})();~%"))))
-
-(in-package :omg)
-
 (defun random-string (len)
   "Generate a random stgring of length len"
   (let ((chrs "ABCDEFGHIJKLMOPQRSTUVWXYZ"))
