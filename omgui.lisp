@@ -268,7 +268,6 @@
       (labels ((tcb (ev) ;; the callback is called after every field update
                  (execute-after 0
                    (lambda ()
-                     (jslog "MCB" (write-to-string key))
                      (let ((val (jscl::oget inp "value")))
                        (if (not (equal last-val val))
                          (let ((new-val (funcall cb val)))
