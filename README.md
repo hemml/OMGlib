@@ -187,7 +187,7 @@ Each connected browser starts a new _session_ which is determined by unique rand
 
 ```
 (with-session (find-session 'ASDXCASA) ;; find a session object by ID
-  (some-bs-function) ;; will be called in session 'ASDXCASA
+  (some-bs-function)) ;; will be called in session 'ASDXCASA
 ```
 
 If you are executing bs-function without session, it will be executed in **ALL** connected browsers and a list of results will be returned.
