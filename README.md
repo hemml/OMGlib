@@ -102,7 +102,7 @@ You can display modal dialog in the browser using the `modal-dialog` macro:
 
 This code will display a modal dialog in debug session and print the result, returned as a `plist` or `nil` if the `Cancel` button was pressed.
 
-You can provide validation functions for input lines in the form `... :line1 (list "field1" #'func)`, where `#'func` can be a browser-side or RPC function. Also you can provide `(lambda (s) ...)` as a validator function, but you will get a security warning. The function must accept a string as an argument and return an (optionally) modified string which will replace the string in the input field. See the _example.lisp_.
+You can provide validation functions for input lines in the form `... :line1 (list "field1" #'func)`, where `#'func` can be a browser-side or RPC function. Also you can provide `(lambda (s) ...)` as a validator function, and even a #'any-backend-function but you will get a security warning in last case. The function must accept a string as an argument and return an (optionally) modified string which will replace the string in the input field. See the _example.lisp_.
 
 You callbacks can use the following supplementary functions:
 
