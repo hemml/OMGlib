@@ -213,6 +213,7 @@ Just after connection, the some boot code will be executed in browser. You can c
   (defun-r my-boot ()
     (print "New browser is connected!")
     (set-debug-session (current-session-id))) ;; Mark the session as debug
+  (add-to-boot '(my-boot))
   ```
 
 - `(rm-from-boot code)` - remove code from boot sequence.
