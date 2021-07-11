@@ -15,7 +15,7 @@ The main idea of this library is to vanish a border between frontend and backend
 The `(start-server)` function starts `clack` web server on default port 7500 (can be changed by setting `omg::*port*` variable). Now, in the html-code you can inject the following line:
 
 ```
-<script src='http://localhost/j' type='text/javascript'></script>
+<script src='http://localhost:7500/j' type='text/javascript'></script>
 ```
 
 or just open a page <http://localhost:7500/> (a blank page with js-injection code).
