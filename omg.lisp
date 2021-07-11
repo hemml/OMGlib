@@ -482,7 +482,7 @@ if(document.readyState==='complete') {
   "The wrapper for RPC requests, used to allow call browser-side functions from RPC funcs."
    (let* ((sem (make-semaphore))
           (key (random-key *gimme-wait-list* |sid-length|)))
-      (setf (gethash key *gimme-wait-list*) (list sem (get-universal-time) nil))
+      (setf (gethash key *gimme-wait-list*) (list sem (get-universal-time) (intern "omg-rpc-symbol" pkg)))
       (bt:make-thread
          (lambda ()
            (compile-to-js `(read-from-string ,(write-to-string (apply op args)))
@@ -534,7 +534,7 @@ if(document.readyState==='complete') {
            (sem (car sem-tim-sym))
            (takit-sem (make-semaphore))
            (mcod (compile-to-js `(write-to-string ,cmd) *package*)))
-      (setf (gethash *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) nil))
+      (setf (gethash *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) (caddr sem-tim-sym)))
       (setf (gethash *current-res* *gimme-wait-list*)
             (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* "/" *takit-path* "',false);"
                                              "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
