@@ -280,12 +280,11 @@ jscl.internals.intern=(name, package_name)=>{
 }
 
 jscl.omgRPC=(cmd)=>{
-  const xhr=new XMLHttpRequest()
+  let xhr=new XMLHttpRequest()
   xhr.open('POST', omgBase+'" *root-path* "/" *rpc-path* "', false)
   xhr.send(cmd)
   if (xhr.status === 200) {
-    return jscl.packages.JSCL.symbols['LS-READ-FROM-STRING'].fvalue(jscl.internals.pv,
-              jscl.internals.make_lisp_string(xhr.response))
+    return eval(xhr.response)
   } else {
     throw new Error('Cannot call RPC')
   }
@@ -354,7 +353,8 @@ if(document.readyState==='complete') {
 (defparameter *current-session* nil)       ;; The current session, usually set by remote-exec
 (defparameter *session-list* (make-hash-table))  ;; The store for session objects, keys are session-ids
 (defparameter *current-res* nil) ;; The key for gimme-wait-list hash, denotes the place where to store result for
-                           ;;   current gimme request
+                                 ;;   current gimme request
+(defparameter *in-rpc* nil) ;; If T -- we are in RPC call, all remote-execs must be done via takit-mechanism
 
 (defun current-session-id ()
   (if *current-session*
@@ -383,7 +383,8 @@ if(document.readyState==='complete') {
 (defparameter *debug-session-id* nil)
 
 (defun set-debug-session (sid)
-  (setf *debug-session-id* sid))
+  (setf *debug-session-id* sid)
+  nil)
 
 (defmacro in-debug-session (&rest body)
   (let ((ses (gensym)))
@@ -477,6 +478,25 @@ if(document.readyState==='complete') {
             `(200 (:content-type "text/plain; charset=utf-8") (,res))))
        `(404 (:content-type "text/plain; charset=utf-8") ("")))))
 
+(defun rpc-wrapper (op args pkg)
+  "The wrapper for RPC requests, used to allow call browser-side functions from RPC funcs."
+   (let* ((sem (make-semaphore))
+          (key (random-key *gimme-wait-list* |sid-length|)))
+      (setf (gethash key *gimme-wait-list*) (list sem (get-universal-time) nil))
+      (bt:make-thread
+         (lambda ()
+           (compile-to-js `(read-from-string ,(write-to-string (apply op args)))
+                          pkg
+                          key))
+         :initial-bindings `((*current-res* . ',key)
+                             (*current-session* . ,*current-session*)
+                             (*in-rpc* . t)))
+      (wait-on-semaphore sem)
+      (let ((res (gethash key *gimme-wait-list*)))
+         (remhash key *gimme-wait-list*)
+        `(200 (:content-type "text/plain; charset=utf-8") (,res)))))
+
+
 (defun exec-remote-macro (name args)
   "Execute in a browser a code of the macro with the specific name and argments.
    Called by JSCL compiler while compling lisp code to JS. We have to execute macros on the
@@ -509,43 +529,60 @@ if(document.readyState==='complete') {
    within the specific session, otherwise, the code will be executed in all sessions and all the return
    values are returned as a list. If the nowait is T, the function will retrurn NIL immediately, without waiting
    result from the remote side."
-  (flet ((exec () (let* ((wlist (wait-list *current-session*))
-                         (sock (socket *current-session*))
-                         (sock-state (ready-state sock))
-                         (key (random-key wlist |sid-length|))
-                         (sem (if nowait nil (make-semaphore)))
-                         (rcmd (compile-to-js `(write-to-string (multiple-value-list ,cmd)) *package*))
-                         (pkgname (package-name *package*))
-                         (pkg-hook (if *local-compile*
-                                        ""
-                                        (format nil "jscl.evaluateString(\"(IN-PACKAGE :~A)\")" pkgname)))
-                         (jscmd (if nowait
-                                    (format nil "~A;~A;"
-                                        pkg-hook
-                                        rcmd)
-                                    (format nil "~A;root_ws.send((\"~~~A\"+~A));"
-                                        pkg-hook
-                                        (symbol-name key)
-                                        rcmd))))
-                   (if (equal sock-state :open)
-                     (progn
-                       (if (not nowait) (setf (gethash key wlist) `(,(current-thread) ,sem nil)))
-                       (send-text sock jscmd)
-                       (if (not nowait)
+  (if *in-rpc*
+    (let* ((sem-tim-sym (gethash *current-res* *gimme-wait-list*))
+           (sem (car sem-tim-sym))
+           (takit-sem (make-semaphore))
+           (mcod (compile-to-js `(write-to-string ,cmd) *package*)))
+      (setf (gethash *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) nil))
+      (setf (gethash *current-res* *gimme-wait-list*)
+            (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* "/" *takit-path* "',false);"
+                                             "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
+                                             "{throw new Error('Cannot fetch symbol (takit fails).');}")
+                        (symbol-name *current-res*)
+                        mcod))
+      (signal-semaphore sem)
+      (wait-on-semaphore takit-sem)
+      (let ((res (gethash *current-res* *takit-wait-list*)))
+        (remhash *current-res* *takit-wait-list*)
+        res))
+    (flet ((exec () (let* ((wlist (wait-list *current-session*))
+                           (sock (socket *current-session*))
+                           (sock-state (ready-state sock))
+                           (key (random-key wlist |sid-length|))
+                           (sem (if nowait nil (make-semaphore)))
+                           (rcmd (compile-to-js `(write-to-string (multiple-value-list ,cmd)) *package*))
+                           (pkgname (package-name *package*))
+                           (pkg-hook (if *local-compile*
+                                          ""
+                                          (format nil "jscl.evaluateString(\"(IN-PACKAGE :~A)\")" pkgname)))
+                           (jscmd (if nowait
+                                      (format nil "~A;~A;"
+                                          pkg-hook
+                                          rcmd)
+                                      (format nil "~A;root_ws.send((\"~~~A\"+~A));"
+                                          pkg-hook
+                                          (symbol-name key)
+                                          rcmd))))
+                     (if (equal sock-state :open)
+                       (progn
+                         (if (not nowait) (setf (gethash key wlist) `(,(current-thread) ,sem nil)))
+                         (send-text sock jscmd)
+                         (if (not nowait)
+                             (progn
+                               (wait-on-semaphore sem)
+                               (let ((ret (let ((*read-eval* nil))
+                                            (read-from-string (caddr (gethash key wlist))))))
+                                   (remhash key wlist)
+                                (unintern key)
+                                (apply #'values ret)))))
+                       (if (equal sock-state :closed)
                            (progn
-                             (wait-on-semaphore sem)
-                             (let ((ret (let ((*read-eval* nil))
-                                          (read-from-string (caddr (gethash key wlist))))))
-                                 (remhash key wlist)
-                              (unintern key)
-                              (apply #'values ret)))))
-                     (if (equal sock-state :closed)
-                         (progn
-                           (emit :close sock)
-                           nil))))))
-    (if *current-session*
-        (exec)
-        (loop for s being the hash-values of *session-list* collect (with-session s (exec))))))
+                             (emit :close sock)
+                             nil))))))
+      (if *current-session*
+          (exec)
+          (loop for s being the hash-values of *session-list* collect (with-session s (exec)))))))
 
 (defparameter *boot-functions* nil)
 
@@ -623,9 +660,7 @@ if(document.readyState==='complete') {
                   (args (caddr cmd))
                   (*current-session* (find-session (intern (symbol-name (cadddr cmd)) :omg))))
               (if (gethash op *rpc-functions*)
-                (let ((res (apply op args)))
-                  `(200 (:content-type "text/plain; charset=utf-8")
-                        (,(write-to-string res))))
+                (rpc-wrapper op args pkg)
                `(404 (:content-type "text/plain; charset=utf-8") ("")))))
           ((equal uri (concatenate 'string *root-path* "/" *gimme-path*))
            (let* ((str (get-str-from (getf env :raw-body) (getf env :content-length)))
