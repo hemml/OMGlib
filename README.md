@@ -18,7 +18,7 @@ The `(start-server)` function starts `clack` web server on default port 7500 (ca
 <script src='http://localhost/j' type='text/javascript'></script>
 ```
 
-or just open a page <http://localhost/> (a blank page with js-injection code).
+or just open a page <http://localhost:7500/> (a blank page with js-injection code).
 
 Now you call a browser-side function, just executing it in REPL, for example:
 
