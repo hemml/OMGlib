@@ -181,9 +181,7 @@ You can declare browser-side variables and parameters with `defvar-f` and `defpa
 
 ### RPC functions
 
-Due to security reasons, you can call only some specially marked functions of backend from browser side. You can declare them with `defun-r` macro, which acts as standard `defun`, but places the function name in the list of allowed RPC functions. The RPC function can be simply called on browser-side as any other function.
-
-**Note**: You cannot call bs-function from RPC-function on backend. This is because RPC function call is blocking JS execution in the browser and the browser cannot process any queries comes from websocket connection, sorry. As a simple workaround you can execute the functions via `(remote-exec '(your-bs-function) :nowait)` - the call will return immediately and the function will be executed on the next JS event loop iteration.
+Due to security reasons, you can call only some specially marked functions of backend from browser side. You can declare them with `defun-r` macro, which acts as standard `defun`, but places the function name in the list of allowed RPC functions. The RPC function can be simply called on browser-side as any other function. **Note**: You cannot call bs-function from RPC-function on backend. This is because RPC function call is blocking JS execution in the browser and the browser cannot process any queries comes from websocket connection, sorry. As a simple workaround you can execute the functions via `(remote-exec '(your-bs-function) :nowait)` - the call will return immediately and the function will be executed on the next JS event loop iteration.
 
 ### Sessions
 
