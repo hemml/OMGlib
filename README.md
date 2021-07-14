@@ -84,6 +84,20 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(load-js-script url)` - load JS script from `url`.
 
+- `(register-hash-cb hash cb)` - register a callback to call when URL hash part changes. With this function you can, for example, automatically mark session as debug one, when you open URL like `http://localhost:7500/#debug`:
+
+  ```
+  (defun-r debug-me ()
+    (set-debug-session (current-session-id)))
+
+  (defun-r my-boot ()
+    (register-hash-cb "#debug" (lambda () (debug-me))))
+
+  (add-to-boot '(my-boot))
+  ```
+
+  If the page is loaded with the registered hash part, the callback will be executed immediately during `register-hash-cb` call.
+
 ### Modal dialogs
 
 You can display modal dialog in the browser using the `modal-dialog` macro:

@@ -31,6 +31,7 @@
            page-height
            parent-element
            prevent-page-close
+           register-hash-cb
            remove-element
            visible-width
            visible-height
@@ -514,4 +515,20 @@
               (make-player)))
           (load-js-script "https://www.youtube.com/iframe_api"))
         (make-player))))
+  nil)
+
+
+(defparameter-f *hash-change-cbs* nil)
+
+(defun-f register-hash-cb (hsh cb)
+  (labels ((mcb (&optional ev)
+             (let* ((hs (jscl::oget (jscl::%js-vref "location") "hash"))
+                    (cb (assoc hs *hash-change-cbs* :test #'equal)))
+               (jslog hs)
+               (if cb (funcall (cdr cb))))))
+    (if (not *hash-change-cbs*)
+        (setf (jscl::oget (jscl::%js-vref "window") "onhashchange")
+              #'mcb))
+    (push (cons hsh cb) *hash-change-cbs*)
+    (mcb))
   nil)

@@ -1,6 +1,6 @@
 (defsystem "omg"
   :description "A Common Lisp library to build fully dynamic web interfaces"
-  :version "0.1.1"
+  :version "0.1.2"
   :author "Pavel Kaygorodov <hemml@me.com>"
   :licence "GPLv3"
   :depends-on ("clack" "websocket-driver-server" "bordeaux-threads" "trivial-utf-8")
