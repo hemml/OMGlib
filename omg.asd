@@ -3,6 +3,8 @@
   :version "0.1.2"
   :author "Pavel Kaygorodov <hemml@me.com>"
   :licence "GPLv3"
+  :homepage "https://github.com/hemml/OMGlib"
+  :source-control "https://github.com/hemml/OMGlib.git"
   :depends-on ("clack" "websocket-driver-server" "bordeaux-threads" "trivial-utf-8")
   :components ((:static-file "README.md")
                (:static-file "LICENSE")
