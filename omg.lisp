@@ -40,6 +40,20 @@
 (defparameter *ssl-key* nil) ;; SSL key path
 (defparameter *ssl-cert* nil) ;; SSL cert path
 
+(defparameter *giant-hash-lock* nil) ;; A giant lock to make hashes thread safe
+
+(defun gethash-lock (&rest args)
+  (if *giant-hash-lock*
+      (bt:with-lock-held (*giant-hash-lock*)
+        (apply #'gethash args))
+      (apply #'gethash args)))
+
+(defun (setf gethash-lock) (val &rest args)
+  (if *giant-hash-lock*
+      (bt:with-lock-held (*giant-hash-lock*)
+        (setf (apply #'gethash args) val))
+      (setf (apply #'gethash args) val)))
+
 ;; If we have both SSL key and SSL cert, start server with SSL support
 (defun has-ssl-p () (and *ssl-key* *ssl-cert*))
 
@@ -47,7 +61,6 @@
 ;;    if you are behind reverse proxy with SSL
 (defun use-wss-p () (or *use-wss* (has-ssl-p)))
 
-(start-multiprocessing) ;; bordeaux-threads requirement
 
 (defun random-string (len)
   "Generate a random stgring of length len"
@@ -65,7 +78,7 @@
 (defun random-key (h &optional (len 10))
   "Make a random hash-table key"
   (let ((k (random-symbol len)))
-    (if (nth-value 1 (gethash k h))
+    (if (nth-value 1 (gethash-lock k h))
         (random-key h len)
         k)))
 
@@ -87,8 +100,8 @@
 
 (defun register-rpc (name)
   (remhash name *exportable-expressions*)
-  (setf (gethash name *rpc-functions*) t)
-  (setf (gethash name *exportable-expressions*)
+  (setf (gethash-lock name *rpc-functions*) t)
+  (setf (gethash-lock name *exportable-expressions*)
        `(defun ,name (&rest argl)
           (funcall (jscl::oget (jscl::%js-vref "jscl") "omgRPC")
                    (write-to-string (list ,(package-name *package*)
@@ -103,23 +116,23 @@
      (defun ,name ,args ,@body)))
 
 (defun-r exec-local-lambda (idargs)
-  (let ((h (gethash (car idargs) *local-lambdas*)))
+  (let ((h (gethash-lock (car idargs) *local-lambdas*)))
     (if h
         (apply h (cdr idargs))
         nil))) ;; return nil if function not found. FIXME: must return an error object!
 
 (defun f-eval (arg)
   "Smart-eval -- evaluate everything, but expotrable expressions, lambdas and function names"
-  (cond ((and (symbolp arg) (or (boundp arg) (fboundp arg)) (gethash arg *exportable-expressions*))
+  (cond ((and (symbolp arg) (or (boundp arg) (fboundp arg)) (gethash-lock arg *exportable-expressions*))
          arg)
         ((and (consp arg)
               (equal (car arg) 'function) ;; in-browser function name
-              (gethash (cadr arg) *exportable-expressions*))
+              (gethash-lock (cadr arg) *exportable-expressions*))
          arg)
         ((and (listp arg) (fboundp (car arg)))
          (cond ((equal (car arg) 'lambda) ;; lambdas are always evaluates in browser
                 arg)
-               ((gethash (car arg) *exportable-expressions*) ;; browser-side function
+               ((gethash-lock (car arg) *exportable-expressions*) ;; browser-side function
                 (cons (car arg) (mapcar #'f-eval (cdr arg))))
                ((equal (car arg) 'CONS)
                 `(quote (,(f-eval (cadr arg)) . (f-eval (caddr arg)))))
@@ -139,7 +152,7 @@
                `(symbol-function (quote ,(cdr f)))  ;; browser-side function
                (let ((id (random-key *local-lambdas*)))
                  (warn "Passing a local function as a parameter of browser-side function is dangerous!")
-                 (setf (gethash id *local-lambdas*) arg)
+                 (setf (gethash-lock id *local-lambdas*) arg)
                  `(lambda (&rest args) (exec-local-lambda (cons ',id args)))))))
         (t arg)))
 
@@ -156,7 +169,7 @@
        `(progn
          ,@macro-hook
          (remhash ',name *rpc-functions*) ;; Unregister possible RPC function with the same name
-         (setf (gethash ',name *exportable-expressions*) ',f-form)
+         (setf (gethash-lock ',name *exportable-expressions*) ',f-form)
          (remote-unintern ',name) ;; unintern the function in all connected browsers
          (defmacro ,name (&rest args)
             (if *in-f-macro*
@@ -173,7 +186,7 @@
             (f-form `(,op ,name ,val)))
            `(progn
               (remhash ',name *rpc-functions*)
-              (setf (gethash ',name *exportable-expressions*) ',f-form)
+              (setf (gethash-lock ',name *exportable-expressions*) ',f-form)
               (,op ,name ,val)
               (remote-unintern ',name)))))
 
@@ -373,7 +386,7 @@ if(document.readyState==='complete') {
 
 (defun find-session (sid)
   "Return session object with specific ID"
-  (gethash sid *session-list*))
+  (gethash-lock sid *session-list*))
 
 (defmacro with-session (sess &rest body)
   "Execute commands inside session sess"
@@ -438,42 +451,42 @@ if(document.readyState==='complete') {
                   (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(\"" rcode "\"))")
                   (concatenate 'string "jscl.evaluateString(\"" rcode "\")"))))
      (if reskey
-         (let ((sem (car (gethash reskey *gimme-wait-list*))))
-           (setf (gethash reskey *gimme-wait-list*) res)
+         (let ((sem (car (gethash-lock reskey *gimme-wait-list*))))
+           (setf (gethash-lock reskey *gimme-wait-list*) res)
            (signal-semaphore sem)))
      res))
 
 (defun takit (key res)
   "The handler for takit-requests. This requests are used to return macro expansion results from browser-side"
-  (let* ((sem-dat-sym (gethash key *takit-wait-list*)))
+  (let* ((sem-dat-sym (gethash-lock key *takit-wait-list*)))
     (if sem-dat-sym
       (let ((newsem (make-semaphore)))
-        (setf (gethash key *takit-wait-list*)
+        (setf (gethash-lock key *takit-wait-list*)
               (let ((*package* (symbol-package (caddr sem-dat-sym)))
                     (*read-eval* nil))
                 (read-from-string res)))
-        (setf (gethash key *gimme-wait-list*) (list newsem (get-universal-time) (caddr sem-dat-sym)))
+        (setf (gethash-lock key *gimme-wait-list*) (list newsem (get-universal-time) (caddr sem-dat-sym)))
         (signal-semaphore (car sem-dat-sym))
         (wait-on-semaphore newsem)
-        `(200 (:content-type "text/plain; charset=utf-8") (,(gethash key *gimme-wait-list*))))
+        `(200 (:content-type "text/plain; charset=utf-8") (,(gethash-lock key *gimme-wait-list*))))
       `(404 (:content-type "text/plain; charset=utf-8") ("")))))
 
 (defun gimme (sym)
   "The handler for gimme-requests, which are used to request unknown symbols from the server-side."
-  (let ((datp (gethash sym *exportable-expressions*)))
+  (let ((datp (gethash-lock sym *exportable-expressions*)))
     (if datp
        (let* ((dat (if (boundp sym)
                        (list (car datp) (cadr datp) (symbol-value sym))
                        datp))
               (sem (make-semaphore))
               (key (random-key *gimme-wait-list* |sid-length|)))
-          (setf (gethash key *gimme-wait-list*) (list sem (get-universal-time) sym))
+          (setf (gethash-lock key *gimme-wait-list*) (list sem (get-universal-time) sym))
           (bt:make-thread
              (lambda ()
                (compile-to-js dat (symbol-package sym) key))
              :initial-bindings `((*current-res* . ',key)))
           (wait-on-semaphore sem)
-          (let ((res (gethash key *gimme-wait-list*)))
+          (let ((res (gethash-lock key *gimme-wait-list*)))
              (remhash key *gimme-wait-list*)
             `(200 (:content-type "text/plain; charset=utf-8") (,res))))
        `(404 (:content-type "text/plain; charset=utf-8") ("")))))
@@ -482,7 +495,7 @@ if(document.readyState==='complete') {
   "The wrapper for RPC requests, used to allow call browser-side functions from RPC funcs."
    (let* ((sem (make-semaphore))
           (key (random-key *gimme-wait-list* |sid-length|)))
-      (setf (gethash key *gimme-wait-list*) (list sem (get-universal-time) (intern "omg-rpc-symbol" pkg)))
+      (setf (gethash-lock key *gimme-wait-list*) (list sem (get-universal-time) (intern "omg-rpc-symbol" pkg)))
       (bt:make-thread
          (lambda ()
            (compile-to-js `(read-from-string ,(write-to-string (apply op args)))
@@ -492,7 +505,7 @@ if(document.readyState==='complete') {
                              (*current-session* . ,*current-session*)
                              (*in-rpc* . t)))
       (wait-on-semaphore sem)
-      (let ((res (gethash key *gimme-wait-list*)))
+      (let ((res (gethash-lock key *gimme-wait-list*)))
          (remhash key *gimme-wait-list*)
         `(200 (:content-type "text/plain; charset=utf-8") (,res)))))
 
@@ -502,15 +515,15 @@ if(document.readyState==='complete') {
    Called by JSCL compiler while compling lisp code to JS. We have to execute macros on the
    browser-side, because all side-effects, produced by macros, must have a place in the browser."
   (if *current-res*
-      (let* ((sem-tim-sym (gethash *current-res* *gimme-wait-list*))
+      (let* ((sem-tim-sym (gethash-lock *current-res* *gimme-wait-list*))
              (sem (car sem-tim-sym))
              (sym (caddr sem-tim-sym))
              (takit-sem (make-semaphore))
              (mcod (compile-to-js
-                      `(write-to-string (apply (lambda ,@(cddr (gethash name *exportable-expressions*))) ',args))
+                      `(write-to-string (apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))
                        (symbol-package sym))))
-        (setf (gethash *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) sym))
-        (setf (gethash *current-res* *gimme-wait-list*)
+        (setf (gethash-lock *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) sym))
+        (setf (gethash-lock *current-res* *gimme-wait-list*)
               (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* "/" *takit-path* "',false);"
                                                "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
                                                "{throw new Error('Cannot fetch symbol (takit fails).');}")
@@ -518,10 +531,10 @@ if(document.readyState==='complete') {
                           mcod))
         (signal-semaphore sem)
         (wait-on-semaphore takit-sem)
-        (let ((macro-res (gethash *current-res* *takit-wait-list*)))
+        (let ((macro-res (gethash-lock *current-res* *takit-wait-list*)))
           (remhash *current-res* *takit-wait-list*)
           macro-res))
-      (remote-exec `(apply (lambda ,@(cddr (gethash name *exportable-expressions*))) ',args))))
+      (remote-exec `(apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))))
 
 
 (defun remote-exec (cmd &optional nowait)
@@ -530,12 +543,12 @@ if(document.readyState==='complete') {
    values are returned as a list. If the nowait is T, the function will retrurn NIL immediately, without waiting
    result from the remote side."
   (if *in-rpc*
-    (let* ((sem-tim-sym (gethash *current-res* *gimme-wait-list*))
+    (let* ((sem-tim-sym (gethash-lock *current-res* *gimme-wait-list*))
            (sem (car sem-tim-sym))
            (takit-sem (make-semaphore))
            (mcod (compile-to-js `(write-to-string ,cmd) *package*)))
-      (setf (gethash *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) (caddr sem-tim-sym)))
-      (setf (gethash *current-res* *gimme-wait-list*)
+      (setf (gethash-lock *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) (caddr sem-tim-sym)))
+      (setf (gethash-lock *current-res* *gimme-wait-list*)
             (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* "/" *takit-path* "',false);"
                                              "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
                                              "{throw new Error('Cannot fetch symbol (takit fails).');}")
@@ -543,7 +556,7 @@ if(document.readyState==='complete') {
                         mcod))
       (signal-semaphore sem)
       (wait-on-semaphore takit-sem)
-      (let ((res (gethash *current-res* *takit-wait-list*)))
+      (let ((res (gethash-lock *current-res* *takit-wait-list*)))
         (remhash *current-res* *takit-wait-list*)
         res))
     (flet ((exec () (let* ((wlist (wait-list *current-session*))
@@ -566,13 +579,13 @@ if(document.readyState==='complete') {
                                           rcmd))))
                      (if (equal sock-state :open)
                        (progn
-                         (if (not nowait) (setf (gethash key wlist) `(,(current-thread) ,sem nil)))
+                         (if (not nowait) (setf (gethash-lock key wlist) `(,(current-thread) ,sem nil)))
                          (send-text sock jscmd)
                          (if (not nowait)
                              (progn
                                (wait-on-semaphore sem)
                                (let ((ret (let ((*read-eval* nil))
-                                            (read-from-string (caddr (gethash key wlist))))))
+                                            (read-from-string (caddr (gethash-lock key wlist))))))
                                    (remhash key wlist)
                                 (unintern key)
                                 (apply #'values ret)))))
@@ -602,7 +615,7 @@ if(document.readyState==='complete') {
   (let* ((ws (websocket-driver.server:make-server env))
          (ses (make-instance 'omg-session :socket ws))
          (sid (get-id ses)))
-    (setf (gethash sid *session-list*) ses)
+    (setf (gethash-lock sid *session-list*) ses)
     (on :open ws
       (lambda ()
           (bt:make-thread
@@ -621,10 +634,10 @@ if(document.readyState==='complete') {
                (val (subseq msg (+ |sid-length| 1))))
               (cond ((equal m "~")
                      (let* ((wlist (wait-list ses))
-                            (trsem (gethash rid wlist)))
+                            (trsem (gethash-lock rid wlist)))
                       (if trsem
                          (progn
-                           (setf (gethash rid wlist) (list (car trsem) (cadr trsem) val))
+                           (setf (gethash-lock rid wlist) (list (car trsem) (cadr trsem) val))
                            (signal-semaphore (cadr trsem))))))))))
     (on :close ws
        (lambda (&key code reason)
@@ -659,7 +672,7 @@ if(document.readyState==='complete') {
                   (op (intern (symbol-name (cadr cmd)) pkg))
                   (args (caddr cmd))
                   (*current-session* (find-session (intern (symbol-name (cadddr cmd)) :omg))))
-              (if (gethash op *rpc-functions*)
+              (if (gethash-lock op *rpc-functions*)
                 (rpc-wrapper op args pkg)
                `(404 (:content-type "text/plain; charset=utf-8") ("")))))
           ((equal uri (concatenate 'string *root-path* "/" *gimme-path*))
@@ -681,6 +694,10 @@ if(document.readyState==='complete') {
 (defparameter *serv* nil)
 
 (defun start-server ()
+  (start-multiprocessing) ;; bordeaux-threads requirement
+  (if (not *giant-hash-lock*)
+      (setf *giant-hash-lock* (bt:make-lock)))
+
   (setf *serv* (clack:clackup #'serv
                               :port *port*
                               :ssl (has-ssl-p)

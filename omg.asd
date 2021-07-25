@@ -1,6 +1,6 @@
 (defsystem "omg"
   :description "A Common Lisp library to build fully dynamic web interfaces"
-  :version "0.1.2"
+  :version "0.1.5"
   :author "Pavel Kaygorodov <hemml@me.com>"
   :licence "GPLv3"
   :homepage "https://github.com/hemml/OMGlib"
