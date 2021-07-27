@@ -693,20 +693,25 @@ if(document.readyState==='complete') {
 
 (defparameter *serv* nil)
 
-(defun start-server ()
+(defparameter *last-args* nil)
+
+(defun start-server (&rest args)
+  (if args (setf *last-args* args))
   (start-multiprocessing) ;; bordeaux-threads requirement
   (if (not *giant-hash-lock*)
       (setf *giant-hash-lock* (bt:make-lock)))
 
-  (setf *serv* (clack:clackup #'serv
-                              :port *port*
-                              :ssl (has-ssl-p)
-                              :ssl-key-file *ssl-key*
-                              :ssl-cert-file *ssl-cert*)))
+  (setf *serv* (apply #'clack:clackup
+                      `(,#'serv
+                        :port ,*port*
+                        :ssl ,(has-ssl-p)
+                        :ssl-key-file ,*ssl-key*
+                        :ssl-cert-file ,*ssl-cert*
+                        ,@*last-args*))))
 
 (defun kill-server () (if *serv* (clack::stop *serv*)))
 
-(defun restart-server ()
+(defun restart-server (&rest args)
   (progn
     (kill-server)
-    (start-server)))
+    (apply #'start-server args)))
