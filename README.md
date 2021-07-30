@@ -195,6 +195,13 @@ You can declare browser-side variables and parameters with `defvar-f` and `defpa
 
 Due to security reasons, you can call only some specially marked functions of backend from browser side. You can declare them with `defun-r` macro, which acts as standard `defun`, but places the function name in the list of allowed RPC functions. The RPC function can be simply called on browser-side as any other function.
 
+Also, you can asynchronously call any RPC function using `async-bind` macro:
+
+```
+(async-bind (res (some-rpc-function arg1 arg2))
+  (jslog res) ;; The code will be executed asynchronously after RPC call completion
+```
+
 ### Sessions
 
 Each connected browser starts a new _session_ which is determined by unique random symbol - _session ID_. When RPC-function is called from browser-side, it will be executed in the session context, so, it will execute all bs-functions in the specific browser. You can implicitly set the current session by executing a code inside `with-session` macro:
