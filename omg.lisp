@@ -303,6 +303,26 @@ jscl.omgRPC=(cmd)=>{
   }
 }
 
+jscl.omgAsyncRPC=(cmd, cb)=>{
+  let xhr=new XMLHttpRequest()
+  xhr.open('POST', omgBase+'" *root-path* "/" *rpc-path* "', true)
+  xhr.onload=function (e) {
+    if (xhr.readyState === 4) {
+      if (xhr.status === 200) {
+        cb(eval(xhr.response))
+      } else {
+        throw new Error('Cannot call RPC')
+      }
+    }
+  }
+  xhr.onerror = function (e) {
+    throw new Error('Cannot call RPC')
+  }
+  xhr.send(cmd)
+}
+
+
+
 const omgOriginalFP=jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue
 jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue=(values,pkg)=>{
   let res=omgOriginalFP(values,pkg)

@@ -2,6 +2,7 @@
   (:use cl omg jscl bordeaux-threads)
   (:export add-youtube-player
            append-element
+           async-bind
            allow-page-close
            check-element
            close-current-dialog
@@ -39,6 +40,16 @@
            visible-top))
 
 (in-package :omgui)
+
+(defmacro-f async-bind (vcmd &rest cod)
+  (let ((res (gensym)))
+    `(funcall (jscl::oget (jscl::%js-vref "jscl") "omgAsyncRPC")
+              (write-to-string (list ,(package-name *package*)
+                                     ',(caadr vcmd)
+                                     (list ,@(cdadr vcmd))
+                                     'omg::*session-id*))
+              (lambda (,(car vcmd))
+                ,@cod))))
 
 (defun-f system-font ()
   "The system font for dialogs, etc. Defined as a function because functions are automatically updated in browsers."
