@@ -68,7 +68,7 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(execute-after time callback)` - execute the `(callback)` after `time`, where `time` specified in seconds.
 
-- `(jsfloor num)` `(jsmax ...nums)` `(jsmin ...nums)` `(jsrandom)` - JS Math functions `Math.floor()`, `Math.max()`, `Math.min()` and `Math.random()`.
+- `(jsfloor num)` `(jsmax ...nums)` `(jsmin ...nums)` `(jsrandom)` `(jssin)` `(jscos)` - JS Math functions `Math.floor()`, `Math.max()`, `Math.min()`, `Math.random()`, `Math.sin()` and `Math.cos()`.
 
 - `(jslog ...args)` - wrapper for `console.log()`
 
@@ -97,6 +97,46 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
   ```
 
   If the page is loaded with the registered hash part, the callback will be executed immediately during `register-hash-cb` call.
+
+### Creating SVG elements
+
+You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. For exanple, the following code will return SVG-object with circle:
+
+```
+(make-svg :|viewBox| "0 0 100 100"
+          '(circle :|cx| 50 :|cy| 50 :|r| 50 :|fill| "red"))
+```
+
+The following function returns animated spinner:
+
+```
+(defun-f make-spinner ()
+  (let* ((width 20)
+         (ncirc 10)
+         (r (/ width 2))
+         (rc (/ width 6)))
+    (apply #'make-svg
+           `(:|viewBox| ,(format nil "0 0 ~A ~A" width width)
+             ,@(loop for i below ncirc
+                     for ang = (* i (/ (* 2 pi) ncirc))
+                     collect
+                 `(circle :|cx| ,(+ r (* (- r rc) (jscos ang)))
+                          :|cy| ,(+ r (* -1 (- r rc) (jssin ang)))
+                          :|r| 0
+                          :|fill| "#505050"
+                          (animate :|attributeName| "r"
+                                   :|from| ,rc
+                                   :|to| ,(* rc (/ 3 (+ ncirc 2)))
+                                   :|begin| ,(format nil "~As" (/ (- ncirc i 1) ncirc))
+                                   :|dur| "1s"
+                                   :|repeatCount| "indefinite")
+                          (animate :|attributeName| "fill-opacity"
+                                   :|from| 1
+                                   :|to| 0
+                                   :|begin| ,(format nil "~As" (/ (- ncirc i 1) ncirc))
+                                   :|dur| "1s"
+                                   :|repeatCount| "indefinite")))))))
+```
 
 ### Modal dialogs
 

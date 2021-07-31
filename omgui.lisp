@@ -22,11 +22,14 @@
            jslog
            jsmax
            jsmin
+           jssin
+           jscos
            jsrandom
            load-js-script
            make-dialog
            make-js-function
            make-js-object
+           make-svg
            modal-dialog
            page-width
            page-height
@@ -51,6 +54,31 @@
               (lambda (,(car vcmd))
                 ,@cod))))
 
+(defun-f make-svg (&rest cod)
+  (labels ((process-cmd (cmd args)
+             (let ((el ((jscl::oget (jscl::%js-vref "document") "createElementNS")
+                        "http://www.w3.org/2000/svg"
+                        (string-downcase (symbol-name cmd)))))
+               (process-cmd-tail el args)))
+           (process-cmd-tail (el cod)
+             (if cod
+                 (cond ((symbolp (car cod))
+                        (progn
+                          ((jscl::oget el "setAttribute")
+                           (symbol-name (car cod))
+                           (cadr cod))
+                          (process-cmd-tail el (cddr cod))))
+                       ((listp (car cod))
+                        (progn
+                          ((jscl::oget el "appendChild")
+                           (process-cmd (caar cod) (cdar cod)))
+                          (process-cmd-tail el (cdr cod))))
+                       (t (progn
+                            (jslog "Invalid cmd:" (car cod))
+                            (process-cmd-tail el (cdr cod)))))
+                 el)))
+    (process-cmd :svg cod)))
+
 (defun-f system-font ()
   "The system font for dialogs, etc. Defined as a function because functions are automatically updated in browsers."
   "1.2em Gill Sans,Gill Sans MT,Calibri,sans-serif")
@@ -67,6 +95,14 @@
 (defun-f jsfloor (x)
   "Math.floor function"
   ((jscl::oget (jscl::%js-vref "Math") "floor") x))
+
+(defun-f jssin (&rest args)
+  "Math.sin function"
+  (apply (jscl::oget (jscl::%js-vref "Math") "sin") args))
+
+(defun-f jscos (&rest args)
+  "Math.cos function"
+  (apply (jscl::oget (jscl::%js-vref "Math") "cos") args))
 
 (defun-f jsmin (&rest args)
   "Math.min function"
@@ -451,9 +487,11 @@
   nil)
 
 (defparameter-f *disable-back* nil)
+(defparameter-f *backcnt* 0)
+(defparameter-f *fback* t)
 (defparameter-f *onpopstate-installed* nil)
 
-(defun-f disable-back-button ()
+(defun-f disable-back-button (&optional cb)
   (if (not *onpopstate-installed*)
     (progn
       ((jscl::oget
@@ -463,7 +501,16 @@
       (setf *onpopstate-installed* t)
       (setf (jscl::oget (jscl::%js-vref "window") "onpopstate")
             (lambda (ev)
-              (if *disable-back* ((jscl::oget (jscl::%js-vref "history") "forward")))))))
+              (let ((bcnt *backcnt*) ;; JSCL bug workaround
+                    (fb *fback*))
+                (setf *backcnt* (+ 1 *backcnt*))
+                (if *disable-back*
+                    ((jscl::oget (jscl::%js-vref "history") "forward")))
+                (if (equal bcnt 1)
+                    (progn
+                      (if (and cb (not fb)) (funcall cb))
+                      (setf *fback* nil)
+                      (setf *backcnt* 0))))))))
   (setf *disable-back* t)
   nil)
 
