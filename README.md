@@ -206,7 +206,7 @@ Also you can define RPC-functions, with
 
 ### Browser-side functions
 
-`defun-r` has similar syntax as a `defun`, but defines macro with the same name, instead of function. The macro has to check its arguments and evaluate only some of them on backend, passing the rest to the browser-side as is. For example:
+`defun-f` has similar syntax as a `defun`, but defines macro with the same name, instead of function. The macro has to check its arguments and evaluate only some of them on backend, passing the rest to the browser-side as is. For example:
 
 ```
 (some-bs-function "value1" ;; will be passed as is
