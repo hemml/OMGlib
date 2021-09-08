@@ -496,7 +496,11 @@ if(document.readyState==='complete') {
   (let ((datp (gethash-lock sym *exportable-expressions*)))
     (if datp
        (let* ((dat (if (boundp sym)
-                       (list (car datp) (cadr datp) (symbol-value sym))
+                       (list (car datp) (cadr datp)
+                         (let ((sv (symbol-value sym)))
+                           (if (listp sv)
+                               `(quote ,sv)
+                               sv)))
                        datp))
               (sem (make-semaphore))
               (key (random-key *gimme-wait-list* |sid-length|)))
