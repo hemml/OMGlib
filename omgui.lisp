@@ -471,8 +471,11 @@
                  (remhash id *dialog-wait-list*)
                  res))))))
 
-(defun-f load-js-script (src)
-  (append-element (create-element "script" :|src| src)))
+(defun-f load-js-script (src &optional onload)
+  (let ((el (create-element "script" :|src| src)))
+    (if onload
+        (setf (jscl::oget el "onload") onload))
+    (append-element el)))
 
 (defun-f make-js-function (name code)
   (setf (jscl::oget (jscl::%js-vref "window") name) code))
