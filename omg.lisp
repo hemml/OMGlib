@@ -2,6 +2,7 @@
   (:use cl clack websocket-driver bordeaux-threads trivial-utf-8)
   (:import-from :event-emitter #:emit)
   (:export add-to-boot       ;; add a code to boot sequence
+           add-to-root-html  ;; add a text to html body
            rm-from-boot      ;; remove a code from boot sequence
            start-server      ;; start a http(s)-server
            kill-server       ;; kill a http(s)-server
@@ -198,11 +199,19 @@
 (make-var-macro-f defparameter) ;; defparameter-f
 (make-var-macro-f defconstant)  ;; defconstant-f
 
+(defparameter *extra-html* "")
+
 (defun get-root-html ()
   "Return a somple HTML with JS injected."
   (concatenate 'string "<html><head><title></title><script src='"
                 *root-path* "/" *js-path*
-                "' type='text/javascript'></script></head><body></body></html>"))
+                "' type='text/javascript'></script></head><body>"
+                *extra-html*
+                "</body></html>"))
+
+
+(defun add-to-root-html (html)
+  (setf *extra-html* (concatenate 'string *extra-html* html)))
 
 (defun get-main-js ()
   "Return the JS code, including JSCL and OMG parts glued."

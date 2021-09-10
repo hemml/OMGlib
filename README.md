@@ -282,3 +282,12 @@ Just after connection, the some boot code will be executed in browser. You can c
 ### REMOTE-EXEC function
 
 You can use `(remote-exec cmd [nowait])` function to execute any CL code `cmd` in the browser. This function has optional argument `nowait` - set it to `T` if you are not needed to return value(s) and the function will return nil immediately.
+
+### Adding a custom HTML into default document body
+
+The default HTML page returned for "/" just contains the main js script link, but you can add any extra HTML into document body, for example to display "Loading..." message:
+
+```
+ (add-to-root-html "<span id='loadBanner'>The page is loading, please wait...</span>")
+ (add-to-boot '(remove-element (js-get-element-by-id "loadBanner")))
+```
