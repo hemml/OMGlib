@@ -82,7 +82,7 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(make-js-function name lambda)` - create an JS function from `lambda` which can be accesssed via `window.name`
 
-- `(load-js-script url)` - load JS script from `url`.
+- `(load-js-script url &optional callback)` - load JS script from `url`. The optional `callback` lambda will be executed then the script is succesfully loaded.
 
 - `(register-hash-cb hash cb)` - register a callback to call when URL hash part changes. With this function you can, for example, automatically mark session as debug one, when you open URL like `http://localhost:7500/#debug`:
 
