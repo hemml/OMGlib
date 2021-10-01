@@ -11,6 +11,7 @@
            defmacro-f        ;; define a browser-side macro
            defvar-f          ;; define a browser-side variable
            defparameter-f    ;; define a browser-side parameter
+           defconstant-f     ;; define a browser-side constant
            defun-r           ;; define a RPC-function
            remote-exec       ;; execute a code in browser(s)
            with-session      ;; execute e code block on the specific browser
