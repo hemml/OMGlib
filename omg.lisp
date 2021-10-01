@@ -11,7 +11,6 @@
            defmacro-f        ;; define a browser-side macro
            defvar-f          ;; define a browser-side variable
            defparameter-f    ;; define a browser-side parameter
-           defconstant-f     ;; define a browser-side constant
            defun-r           ;; define a RPC-function
            remote-exec       ;; execute a code in browser(s)
            with-session      ;; execute e code block on the specific browser
@@ -443,7 +442,7 @@ if(document.readyState==='complete') {
   (loop for s being the hash-values of *session-list* do
        (let* ((sym-name (symbol-name sym))
               (sym-pkg (package-name (symbol-package sym)))
-              (cmd (format nil "if(\"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"]) {
+              (cmd (format nil "if(\"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"].symbols) {
             delete(omgInFetch[\"~A:~A\"])
             jscl.packages[\"~A\"].symbols[\"~A\"].fvalue=omgFetchFvalue(omgOriginalIntern(\"~A\", \"~A\"))
             jscl.packages[\"~A\"].symbols[\"~A\"].value=undefined}"
