@@ -440,12 +440,13 @@ if(document.readyState==='complete') {
   "Unintern the symbol within all active sessions, mandatory to reflect symbol redefinition.
    The next try to intern the symbol in browser-side will cause new symbol fetch."
   (loop for s being the hash-values of *session-list* do
-       (let ((cmd (format nil "if(\"~A\" in jscl.packages) {delete(omgInFetch[\"~A:~A\"]);delete(jscl.packages[\"~A\"].symbols[\"~A\"]);}"
-                                (package-name (symbol-package sym))
-                                (package-name (symbol-package sym))
-                                (symbol-name sym)
-                                (package-name (symbol-package sym))
-                                (symbol-name sym))))
+       (let* ((sym-name (symbol-name sym))
+              (sym-pkg (package-name (symbol-package sym)))
+              (cmd (format nil "if(\"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"]) {
+            delete(omgInFetch[\"~A:~A\"])
+            jscl.packages[\"~A\"].symbols[\"~A\"].fvalue=omgFetchFvalue(omgOriginalIntern(\"~A\", \"~A\"))
+            jscl.packages[\"~A\"].symbols[\"~A\"].value=undefined}"
+                                sym-pkg sym-name sym-pkg sym-pkg sym-name sym-pkg sym-name sym-name sym-pkg sym-pkg sym-name)))
          (send-text (socket s) cmd))))
 
 ;; From LISP Cookbook
