@@ -73,6 +73,10 @@
                           ((jscl::oget el "appendChild")
                            (process-cmd (caar cod) (cdar cod)))
                           (process-cmd-tail el (cdr cod))))
+                       ((stringp (car cod))
+                        (let ((txt ((jscl::oget (jscl::%js-vref "document") "createTextNode") (car cod))))
+                          ((jscl::oget el "appendChild") txt)
+                          (process-cmd-tail el (cdr cod))))
                        (t (progn
                             (jslog "Invalid cmd:" (car cod))
                             (process-cmd-tail el (cdr cod)))))
