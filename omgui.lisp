@@ -56,9 +56,13 @@
 
 (defun-f make-svg (&rest cod)
   (labels ((process-cmd (cmd args)
-             (let ((el ((jscl::oget (jscl::%js-vref "document") "createElementNS")
-                        "http://www.w3.org/2000/svg"
-                        (string-downcase (symbol-name cmd)))))
+             (let* ((symname (symbol-name cmd))
+                    (symdown (string-downcase symname))
+                    (el ((jscl::oget (jscl::%js-vref "document") "createElementNS")
+                         "http://www.w3.org/2000/svg"
+                         (if (equal symname (string-upcase symname))
+                             symdown
+                             symname))))
                (process-cmd-tail el args)))
            (process-cmd-tail (el cod)
              (if cod
