@@ -240,17 +240,19 @@ const omgInFetch={}
 
 const omgOriginalSymbolValue=jscl.internals.symbolValue
 jscl.internals.symbolValue=(symbol)=>{
-  const full_name=symbol.package.packageName+':'+symbol.name
-  if(symbol.value===undefined&&symbol.package.omgPkg&&!omgInFetch[full_name]) {
-    //console.log('SYMVALUE FETCH:', full_name)
-    omgInFetch[full_name]=true
-    let xhr=new XMLHttpRequest()
-    xhr.open('POST', omgBase+'" *root-path* "/" *gimme-path* "', false)
-    xhr.send(full_name)
-    if (xhr.status === 200) {
-      eval(xhr.response)
-    } else {
-      throw new Error('Cannot fetch symbol '+name)
+  if(symbol.package) {
+    const full_name=symbol.package.packageName+':'+symbol.name
+    if(symbol.value===undefined&&symbol.package.omgPkg&&!omgInFetch[full_name]) {
+      //console.log('SYMVALUE FETCH:', full_name)
+      omgInFetch[full_name]=true
+      let xhr=new XMLHttpRequest()
+      xhr.open('POST', omgBase+'" *root-path* "/" *gimme-path* "', false)
+      xhr.send(full_name)
+      if (xhr.status === 200) {
+        eval(xhr.response)
+      } else {
+        throw new Error('Cannot fetch symbol '+name)
+      }
     }
   }
   return omgOriginalSymbolValue(symbol)
