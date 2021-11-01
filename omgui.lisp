@@ -4,6 +4,7 @@
            append-element
            async-bind
            allow-page-close
+           browser-case
            check-element
            close-current-dialog
            create-element
@@ -601,3 +602,42 @@
     (push (cons hsh cb) *hash-change-cbs*)
     (mcb))
   nil)
+
+;; use:
+;; (browser-case
+;;   (:safari (jslog "Safari detected!"))
+;;   ((:firefox :chrome) (jslog "FF or Chrome!"))
+;;   (:opera (jslog "Opera!"))
+;;   (:edge (jslog "Edge!")))
+;;   (t (jslog "Unknown browser!"))
+
+(defmacro-f browser-case (&rest cod)
+  ;; Hygienic macros don't work due to some bugs, sorry
+  `(let* ((OMGUI-agnt2112 (string-downcase (jscl::oget (jscl::%js-vref "navigator") "userAgent")))
+          (OMGUI-brws2112 (cond ((or (search "chrome" OMGUI-agnt2112)
+                                     (search "chromium" OMGUI-agnt2112)
+                                     (search "crios" OMGUI-agnt2112))
+                                 :chrome)
+                                ((or (search "firefox" OMGUI-agnt2112)
+                                     (search "fxios" OMGUI-agnt2112))
+                                 :firefox)
+                                ((search "safari" OMGUI-agnt2112)
+                                 :safari)
+                                ((search "opr" OMGUI-agnt2112)
+                                 :opera)
+                                ((search "edg" OMGUI-agnt2112)
+                                 :edge)
+                                (t nil))))
+     (cond
+       ,@(mapcar
+           (lambda (c)
+             `(,(if (listp (car c))
+                    `(or ,@(mapcar
+                              (lambda (s)
+                                `(equal OMGUI-brws2112 ,s))
+                              (car c)))
+                    (if (equal t (car c))
+                        (car c)
+                        `(equal OMGUI-brws2112 ,(car c))))
+                ,@(cdr c)))
+           cod))))

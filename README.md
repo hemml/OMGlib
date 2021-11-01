@@ -98,6 +98,21 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
   If the page is loaded with the registered hash part, the callback will be executed immediately during `register-hash-cb` call.
 
+- `(browser-case (brosser* code)*)` macro - executing a code depending from user browser. `browser` must be a symbol `:safari`, `:firefox`, `:chrome`, `:opera` or `:edge`. The `T` means other (undetected or unlisted) browser. Examples:
+
+  ```
+  (browser-case
+     (:safari (jslog "Safari detected!"))
+     ((:firefox :chrome) (jslog "FF or Chrome!"))
+     (:opera (jslog "Opera!"))
+     (:edge (jslog "Edge!")))
+     (t (jslog "Other browser!"))
+
+  (browser-case
+     (:safari (safari-specific-code)) ;; will be executed in Safari
+     (t (default-code)) ;; will be executed in non-Safari browsers
+  ```
+
 ### Creating SVG elements
 
 You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For exanple, the following code will return SVG-object with circle:
@@ -136,6 +151,12 @@ The following function returns animated spinner:
                                    :|begin| ,(format nil "~As" (/ (- ncirc i 1) ncirc))
                                    :|dur| "1s"
                                    :|repeatCount| "indefinite")))))))
+```
+
+To include text nodes use a string:
+
+```
+'(text (:|textPath| :|href| "#MyTextCurve" "The curved text!"))
 ```
 
 ### Modal dialogs
