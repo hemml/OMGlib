@@ -16,6 +16,7 @@
            enable-back-button
            enable-scroll
            execute-after
+           gensym2
            get-dialog-data
            get-element-id
            js-get-element-by-id
@@ -603,6 +604,9 @@
     (mcb))
   nil)
 
+(defun-f gensym2 (&rest args)
+  (intern (symbol-name (apply #'gensym args))))
+
 ;; use:
 ;; (browser-case
 ;;   (:safari (jslog "Safari detected!"))
@@ -612,32 +616,33 @@
 ;;   (t (jslog "Unknown browser!"))
 
 (defmacro-f browser-case (&rest cod)
-  ;; Hygienic macros don't work due to some bugs, sorry
-  `(let* ((OMGUI-agnt2112 (string-downcase (jscl::oget (jscl::%js-vref "navigator") "userAgent")))
-          (OMGUI-brws2112 (cond ((or (search "chrome" OMGUI-agnt2112)
-                                     (search "chromium" OMGUI-agnt2112)
-                                     (search "crios" OMGUI-agnt2112))
-                                 :chrome)
-                                ((or (search "firefox" OMGUI-agnt2112)
-                                     (search "fxios" OMGUI-agnt2112))
-                                 :firefox)
-                                ((search "safari" OMGUI-agnt2112)
-                                 :safari)
-                                ((search "opr" OMGUI-agnt2112)
-                                 :opera)
-                                ((search "edg" OMGUI-agnt2112)
-                                 :edge)
-                                (t nil))))
-     (cond
-       ,@(mapcar
-           (lambda (c)
-             `(,(if (listp (car c))
-                    `(or ,@(mapcar
-                              (lambda (s)
-                                `(equal OMGUI-brws2112 ,s))
-                              (car c)))
-                    (if (equal t (car c))
-                        (car c)
-                        `(equal OMGUI-brws2112 ,(car c))))
-                ,@(cdr c)))
-           cod))))
+  (let ((agent (gensym2))
+        (browser (gensym2)))
+    `(let* ((,agent (string-downcase (jscl::oget (jscl::%js-vref "navigator") "userAgent")))
+            (,browser (cond ((or (search "chrome" ,agent)
+                                 (search "chromium" ,agent)
+                                 (search "crios" ,agent))
+                             :chrome)
+                            ((or (search "firefox" ,agent)
+                                 (search "fxios" ,agent))
+                             :firefox)
+                            ((search "safari" ,agent)
+                             :safari)
+                            ((search "opr" ,agent)
+                             :opera)
+                            ((search "edg" ,agent)
+                             :edge)
+                            (t nil))))
+       (cond
+         ,@(mapcar
+             (lambda (c)
+               `(,(if (listp (car c))
+                      `(or ,@(mapcar
+                                (lambda (s)
+                                  `(equal ,browser ,s))
+                                (car c)))
+                      (if (equal t (car c))
+                          (car c)
+                          `(equal ,browser ,(car c))))
+                  ,@(cdr c)))
+             cod)))))

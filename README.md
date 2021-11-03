@@ -113,6 +113,8 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
      (t (default-code)) ;; will be executed in non-Safari browsers
   ```
 
+- `(gensym2)` - like `(gensym)`, but returns interned symbol. Use for hygienic macros, defined with `defmacro-f`, because all symbols in the macro output must pass write-read chain to be transferred to the host.
+
 ### Creating SVG elements
 
 You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For exanple, the following code will return SVG-object with circle:
@@ -212,6 +214,8 @@ You callbacks can use the following supplementary functions:
 
 - There is no error propagation yet between browser and backend. If bs-function causes a error, `nil` will be returned.
 
+- Hygienic macros _must_ use `gensym2` instead of `gensym`
+
 ## How it works
 
 There are the following macros to define browser-side functions, macros and variables:
@@ -246,7 +250,7 @@ The CLOS is not implemented in browser-side. It is implemented in JSCL, but I se
 
 ### Browser-side macros
 
-Browser-side macros are called while code is compiled to JS and must be evaluated on the browser side. So, if you are use such macros while the `omg::*local-compile*` is set to `T` (by default), JSCL will parse the code and execute code of each macro in the browser, get the results and finish the compilation using them. This means that while local compilation is enabled, macro expansion will be rather expensive, especially, if you are using recursive macros.
+Browser-side macros are called while code is compiled to JS and must be evaluated on the browser side. So, if you are use such macros while the `omg::*local-compile*` is set to `T` (by default), JSCL will parse the code and execute code of each macro in the browser, get the results and finish the compilation using them. This means that while local compilation is enabled, macro expansion will be rather expensive, especially, if you are using recursive macros. Also, all of the macro output must be transferred from the browser to the host, so you cannot use just `(gensym)` to generate temporary symbols, they are must be interned to be properly transferred. Intern all of your symbols manually or just use helper function `(gensym2)` from OMGUI package.
 
 ### Browser-side variables and parameters
 
