@@ -44,17 +44,17 @@
 
 (defparameter *giant-hash-lock* nil) ;; A giant lock to make hashes thread safe
 
-(defun gethash-lock (&rest args)
+(defun gethash-lock (key hash)
   (if *giant-hash-lock*
       (bt:with-lock-held (*giant-hash-lock*)
-        (apply #'gethash args))
-      (apply #'gethash args)))
+        (gethash key hash))
+      (gethash key hash)))
 
-(defun (setf gethash-lock) (val &rest args)
+(defun (setf gethash-lock) (val key hash)
   (if *giant-hash-lock*
       (bt:with-lock-held (*giant-hash-lock*)
-        (setf (apply #'gethash args) val))
-      (setf (apply #'gethash args) val)))
+        (setf (gethash key hash) val))
+      (setf (gethash key hash) val)))
 
 ;; If we have both SSL key and SSL cert, start server with SSL support
 (defun has-ssl-p () (and *ssl-key* *ssl-cert*))
@@ -569,6 +569,7 @@ if(document.readyState==='complete') {
         (signal-semaphore sem)
         (wait-on-semaphore takit-sem)
         (let ((macro-res (gethash-lock *current-res* *takit-wait-list*)))
+          (print macro-res)
           (remhash *current-res* *takit-wait-list*)
           macro-res))
       (remote-exec `(apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))))
