@@ -569,7 +569,6 @@ if(document.readyState==='complete') {
         (signal-semaphore sem)
         (wait-on-semaphore takit-sem)
         (let ((macro-res (gethash-lock *current-res* *takit-wait-list*)))
-          (print macro-res)
           (remhash *current-res* *takit-wait-list*)
           macro-res))
       (remote-exec `(apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))))
