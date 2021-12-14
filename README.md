@@ -115,6 +115,10 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(gensym2)` - like `(gensym)`, but returns interned symbol. Use for hygienic macros, defined with `defmacro-f`, because all symbols in the macro output must pass write-read chain to be transferred to the host.
 
+- `(add-style element css)` - add css style to the element
+
+  Example: `(add-style el ":hover {background: #f0f0ff;}")`
+
 ### Creating SVG elements
 
 You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For exanple, the following code will return SVG-object with circle:

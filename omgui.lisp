@@ -1,6 +1,7 @@
 (defpackage :omgui
   (:use cl omg jscl bordeaux-threads)
-  (:export add-youtube-player
+  (:export add-style
+           add-youtube-player
            append-element
            async-bind
            allow-page-close
@@ -646,3 +647,22 @@
                           `(equal ,browser ,(car c))))
                   ,@(cdr c)))
              cod)))))
+
+(defparameter-f *style-cache* nil)
+
+(defun-f add-style (el css-text)
+  (let* ((sid (assoc css-text *style-cache* :test #'equal))
+         (chrs "ABCDEFGHIJKLMOPQRSTUVWXYZ")
+         (clsid (if sid
+                    (cdr sid)
+                    (map 'string
+                      (lambda (x)
+                        (declare (ignore x))
+                        (char chrs (jsfloor (* (jsrandom) (length chrs)))))
+                      (make-string 8)))))
+    (if (not sid)
+        (progn
+          (append-element (create-element "style" :|innerHTML| (jscl::concat "." clsid css-text))
+                          (jscl::oget (jscl::%js-vref "document") "head"))
+          (push (cons css-text clsid) *style-cache*)))
+    ((jscl::oget el "classList" "add") clsid)))
