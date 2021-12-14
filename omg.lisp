@@ -479,7 +479,7 @@ if(document.readyState==='complete') {
                    (jscl::with-compilation-environment
                      (jscl::compile-toplevel (jscl::ls-read-from-string c1) t t))
                    (write-to-string code)))
-         (rcode (replace-all (replace-all (replace-all code "\\" "\\\\") (string #\linefeed) "\\n") "\"" "\\\""))
+         (rcode (replace-all (replace-all (replace-all (replace-all code "\\" "\\\\") (string #\linefeed) "\\n") (string #\return) "\\\\r") "\"" "\\\""))
          (res (if *local-compile*
                   (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(\"" rcode "\"))")
                   (concatenate 'string "jscl.evaluateString(\"" rcode "\")"))))
