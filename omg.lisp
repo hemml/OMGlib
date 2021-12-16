@@ -13,6 +13,7 @@
            defparameter-f    ;; define a browser-side parameter
            defconstant-f     ;; define a browser-side constant
            defun-r           ;; define a RPC-function
+           def-session-var   ;; define server-side session var
            remote-exec       ;; execute a code in browser(s)
            with-session      ;; execute e code block on the specific browser
            find-session      ;; find session object by ID
@@ -438,6 +439,13 @@ if(document.readyState==='complete') {
            (with-session ,ses
              ,@body)
            (warn "Cannot find debug session!")))))
+
+(defmacro def-session-var (vr &optional init)
+  (let ((h (gensym)))
+    `(progn
+       (defparameter ,h (make-hash-table))
+       (define-symbol-macro ,vr
+         (gethash (current-session-id) ,h ,init)))))
 
 (defun remote-unintern (sym)
   "Unintern the symbol within all active sessions, mandatory to reflect symbol redefinition.

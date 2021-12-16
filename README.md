@@ -287,6 +287,15 @@ The library provides some other utility functions to work with sessions:
 - `(set-debug-session session)` - execute this function to mark specific _session_ as **debug**.
 - `(in-debug-session code)` - execute a code in the debug session. If there are no active debug session a warning will be printed and code will not executed.
 
+To define global server-side variable, which value will be different for different sessions, use `def-session-var` macro:
+
+```
+(def-session-var *search-in-progress* nil)
+```
+
+The macro will create a symbol-macro with name `*search-in-progress*` and a hash table to store values for each session. Now you can use `*search-in-progress*` as a normal setf-able variable.
+
+
 ### Boot functions
 
 Just after connection, the some boot code will be executed in browser. You can control this using the following functions:
