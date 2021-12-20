@@ -53,7 +53,7 @@
               (write-to-string (list ,(package-name *package*)
                                      ',(caadr vcmd)
                                      (list ,@(cdadr vcmd))
-                                     'omg::*session-id*))
+                                     omg::*session-id*))
               (lambda (,(car vcmd))
                 ,@cod))))
 
