@@ -174,13 +174,16 @@
 
 (defun-f append-element (el &optional parent)
   "Append the element el as a child to the parent"
-  (if parent
-    ((jscl::oget parent "appendChild") el)
-    ((jscl::oget (jscl::%js-vref "document")
-                 "body"
-                 "appendChild")
-     el))
-  el)
+  (let ((el1 (if (stringp el)
+                 ((jscl::oget (jscl::%js-vref "document") "createTextNode") el)
+                 el)))
+    (if parent
+      ((jscl::oget parent "appendChild") el1)
+      ((jscl::oget (jscl::%js-vref "document")
+                   "body"
+                   "appendChild")
+       el1))
+    el1))
 
 (defun-f parent-element (el)
   "Get parent of the element el"

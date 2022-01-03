@@ -50,7 +50,7 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
   (create-element "div" :|innerHTML| "Some text" :|style.fontWeight| "lighter")
   ```
 
-- `(append-element element &optional parent)` - append DOM `element` as a child to the `parent`. If the `parent` is omitted, the element will be appended to `document`.
+- `(append-element element &optional parent)` - append DOM `element` as a child to the `parent`. If the `parent` is omitted, the element will be appended to `document`. A text string can be supplied instead of DOM element to add a text node.
 
 - `(check-element ID)` - check if DOM element with `ID` exists.
 
