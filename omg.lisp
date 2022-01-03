@@ -19,7 +19,8 @@
            find-session      ;; find session object by ID
            current-session-id  ;; get ID of current session (returns NIL if no session)
            set-debug-session  ;; mark current session as "debug"
-           in-debug-session)) ;; execute code in debug session
+           in-debug-session ;; execute code in debug session
+           make-pwa))       ;; serve web page as a Progressive Web App
 
 (in-package :omg)
 
@@ -203,14 +204,72 @@
 
 (defparameter *extra-html* "")
 
+(defparameter *pwa-mainfest* nil)
+(defparameter *pwa-icon* nil)
+(defparameter *pwa-path* "pwa")
+(defparameter *pwa-icon-file* nil)
+(defparameter *pwa-icon-type* nil)
+(defparameter *pwa-name* nil)
+(defparameter *pwa-sw-js-name* nil)
+
+(defun make-pwa (&key (name "Application")
+                      (short-name "app")
+                      (display "standalone")
+                      (theme-color "#000000")
+                      (background-color "#ffffff")
+                      icon-path)
+  (setf *pwa-name* name)
+  (setf *pwa-sw-js-name* (format nil "~A/pwa-sw-~A.js" *root-path* (random-string 10)))
+  (setf *pwa-mainfest* (format nil "{
+\"name\":\"~A\",\"short_name\":\"~A\",\"display\":\"~A\",\"start_url\":\"~A/\",\"theme_color\":\"~A\",\"background_color\":\"~A\"~A}"
+                         name short-name display *root-path* theme-color background-color
+                         (if icon-path
+                             (let* ((path (if (equal (type-of icon-path) 'pathname)
+                                              icon-path
+                                              (parse-namestring icon-path)))
+                                    (typ (media-types:extension-media-type (pathname-type path)))
+                                    (size (cond ((equal typ "image/png")
+                                                 (let ((png (pngload:load-file path :decode nil)))
+                                                   (format nil "~Ax~A" (pngload:get-metadata png :width)
+                                                                       (pngload:get-metadata png :height))))
+                                                ((equal typ "image/jpeg")
+                                                 (multiple-value-bind (h w ncomp trans) (cl-jpeg:jpeg-file-dimensions path)
+                                                   (declare (ignore ncomp))
+                                                   (declare (ignore trans))
+                                                   (format nil "~Ax~A" w h)))
+                                                ((equal typ "image/gif")
+                                                 (let ((gif (skippy:load-data-stream path)))
+                                                   (format nil "~Ax~A" (skippy:width gif) (skippy:height gif))))
+                                                (t (error (format nil "Unsupported icon format: ~A" typ))))))
+                               (setf *pwa-icon* (format nil "~A/~A/~A" *root-path* *pwa-path* (file-namestring path)))
+                               (setf *pwa-icon-file* path)
+                               (setf *pwa-icon-type* typ)
+                               (format nil ",\"icons\"\: [{\"src\": \"~A\",\"sizes\": \"~A\",\"type\": \"~A\"}]"
+                                           *pwa-icon*
+                                           size
+                                           typ))
+                             ""))))
+
 (defun get-root-html ()
   "Return a somple HTML with JS injected."
-  (concatenate 'string "<html><head><title></title><script src='"
-                *root-path* "/" *js-path*
-                "' type='text/javascript'></script></head><body>"
-                *extra-html*
-                "</body></html>"))
-
+  (concatenate 'string "<html><head><title>"
+               (if *pwa-name* *pwa-name* "")
+               "</title>"
+               (if *pwa-mainfest*
+                   (format nil "<meta name=\"viewpo\rt\" content=\"width=device-width, user-scalable=no\" />
+<link rel=\"manifest\" href=\"~A/~A/manifest.json\" />~A"
+                           *root-path* *pwa-path*
+                           (if *pwa-icon*
+                               (format nil "<link rel=\"icon\" href=\"~A\" type=\"~A\" />"
+                                       *pwa-icon*
+                                       *pwa-icon-type*)
+                               ""))
+                   "")
+               "<script src='"
+               *root-path* "/" *js-path*
+               "' type='text/javascript'></script></head><body>"
+               *extra-html*
+               "</body></html>"))
 
 (defun add-to-root-html (html)
   (setf *extra-html* (concatenate 'string *extra-html* html)))
@@ -387,7 +446,13 @@ const make_conn=()=>{
   }
 }
 
-if(document.readyState==='complete') {
+"   (if *pwa-mainfest*
+      (concatenate 'string "if (navigator.serviceWorker != null) {
+      navigator.serviceWorker.register('" *pwa-sw-js-name* "', {scope: '" *root-path* "'}).then(function(registration) {
+    console.log('Registered events at scope: ', registration.scope);
+    });}")
+      "")
+    "if(document.readyState==='complete') {
   make_conn()
 } else {
   document.addEventListener('DOMContentLoaded',()=>{
@@ -703,9 +768,41 @@ if(document.readyState==='complete') {
     (read-sequence tseq s)
     (utf-8-bytes-to-string tseq)))
 
+(defparameter *pwa-sw-js* "
+console.log('SW.JS')
+
+self.addEventListener('install', function(e) {
+  console.log('Install event!')
+  return self.skipWaiting()
+})
+
+self.addEventListener('activate', function(e) {
+  console.log('Activate event!')
+  return self.clients.claim()
+})
+
+self.addEventListener('fetch', function(e) {
+  console.log('Fetch event:', e.request.url)
+  return fetch(e.request.url)
+})
+")
+
 (defun serv (env)
   (let ((uri (getf env :REQUEST-URI)))
-    (cond ((equal uri (concatenate 'string *root-path* "/" *js-path*))
+    (cond ((equal uri (concatenate 'string *root-path* "/" *pwa-path* "/manifest.json"))
+           (if *pwa-mainfest*
+               `(200 (:content-type "application/json; charset=utf-8") (,*pwa-mainfest*))
+               '(404 (:content-type "text/plain") ("File not found"))))
+          ((equal uri *pwa-sw-js-name*)
+           (if *pwa-mainfest*
+               `(200 (:content-type "text/javascript; charset=utf-8")
+                     (,*pwa-sw-js*))
+               '(404 (:content-type "text/plain") ("File not found"))))
+          ((equal uri *pwa-icon*)
+           `(200 (:content-type ,*pwa-icon-type*
+                  :content-length ,(with-open-file (f *pwa-icon-file* :direction :input) (file-length f)))
+                 ,*pwa-icon-file*))
+          ((equal uri (concatenate 'string *root-path* "/" *js-path*))
            `(200
                (:content-type "text/javascript; charset=utf-8")
                (,(get-main-js))))

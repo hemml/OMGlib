@@ -5,7 +5,7 @@
   :licence "GPLv3"
   :homepage "https://github.com/hemml/OMGlib"
   :source-control "https://github.com/hemml/OMGlib.git"
-  :depends-on ("clack" "websocket-driver-server" "bordeaux-threads" "trivial-utf-8")
+  :depends-on ("clack" "websocket-driver-server" "bordeaux-threads" "trivial-utf-8" "media-types" "pngload" "skippy" "cl-jpeg")
   :components ((:static-file "README.md")
                (:static-file "LICENSE")
                (:file "omg")

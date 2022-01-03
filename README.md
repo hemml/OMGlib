@@ -330,3 +330,13 @@ The default HTML page returned for "/" just contains the main js script link, bu
  (add-to-root-html "<span id='loadBanner'>The page is loading, please wait...</span>")
  (add-to-boot '(remove-element (js-get-element-by-id "loadBanner")))
 ```
+
+### PWA mode
+
+The library can be used to create Progressive Web App (PWA), just by adding one single function call:
+
+```
+  (make-pwa (:name "Application Name" :short-name "Application Short Name" :display "standalone" :theme-color "#000000" :background-color "#ffffff" :icon-path "/path/to/icon/file.png")
+```
+
+All of the arguments are optional (default values will be used), but to get installable app you need to provide a path to icon file. Now only `.png` `.jpeg` and `.gif` image formats are accepted.
