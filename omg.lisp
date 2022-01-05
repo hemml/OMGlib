@@ -769,7 +769,7 @@ const make_conn=()=>{
     (utf-8-bytes-to-string tseq)))
 
 (defparameter *pwa-sw-js* "
-console.log('SW.JS')
+const bc = new BroadcastChannel('omg_service_worker');
 
 self.addEventListener('install', function(e) {
   console.log('Install event!')
@@ -783,6 +783,7 @@ self.addEventListener('activate', function(e) {
 
 self.addEventListener('fetch', function(e) {
   console.log('Fetch event:', e.request.url)
+  bc.postMessage({type:'fetch', uri:e.request.url})
   return fetch(e.request.url)
 })
 ")

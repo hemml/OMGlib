@@ -348,3 +348,16 @@ The library can be used to create Progressive Web App (PWA), just by adding one 
 ```
 
 All of the arguments are optional (default values will be used), but to get installable app you need to provide a path to icon file. Now only `.png` `.jpeg` and `.gif` image formats are accepted.
+
+Worker process sending broadcast message for every `fetch` request, the app can listen for them with the following code:
+
+```
+(setf (jscl::oget (jscl::make-new (jscl::oget (jscl::%js-vref "window") "BroadcastChannel")
+                                    (jscl::lisp-to-js "omg_service_worker"))
+                  "onmessage")
+      (lambda (msg)
+        (let ((typ (jscl::oget msg "data" "type")))
+          (if (equal typ "fetch")
+              (let ((uri (jscl::oget msg "data" "uri")))
+                (jslog "FETCH:" uri))))))
+```
