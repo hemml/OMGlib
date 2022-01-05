@@ -166,10 +166,15 @@
   "Create and return a DOM element type ``typ'' and specified attributes: (create-element \"A\" '|href| \"http://google.com\")"
   (let ((el ((jscl::oget (jscl::%js-vref "document") "createElement") typ)))
     (loop for (k v) on args by (function cddr) do
-        (let* ((path (js-string-split (symbol-name k) #\.))
-               (obj (deep-oget-1 el path))
-               (fld (car (last path))))
-          (jscl::oset v obj fld)))
+        (if (equal k :append-element)
+            (append-element (if (stringp v)
+                                ((jscl::oget (jscl::%js-vref "document") "createTextNode") v)
+                                v)
+                            el)
+            (let* ((path (js-string-split (symbol-name k) #\.))
+                   (obj (deep-oget-1 el path))
+                   (fld (car (last path))))
+              (jscl::oset v obj fld))))
     el))
 
 (defun-f append-element (el &optional parent)
