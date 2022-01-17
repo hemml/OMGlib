@@ -43,9 +43,13 @@
            visible-width
            visible-height
            visible-left
-           visible-top))
+           visible-top
+           winref))
 
 (in-package :omgui)
+
+(defun-f winref (name)
+  (jscl::oget (jscl::%js-vref "window") name))
 
 (defmacro-f async-bind (vcmd &rest cod)
   (let ((res (gensym)))
