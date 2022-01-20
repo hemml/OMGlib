@@ -131,7 +131,7 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(js-parse-float s)` - convert a string to float (browser-side)
 
-- `(local-storage key)` `(setf (local-storage key) val)` - interface to `localStorage` API. Accepts any values, returns strings only.
+- `(local-storage key &optional def-val)` `(setf (local-storage key) val)` - interface to the `localStorage` API. Accepts any values, returns strings only.
 
 ### Creating SVG elements
 
