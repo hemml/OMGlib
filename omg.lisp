@@ -164,24 +164,54 @@
   "Just a macro to generate macros for f-functions and f-macros definintions (defun-f, defmacro-f, etc...)"
   `(defmacro ,(read-from-string (format nil "~a-f" op)) (name args &rest body)
      (let* ((op ',op)
+            (is-setf (and (listp name) (equal (car name) 'setf)))
+            (ex-sym (if is-setf
+                        (intern (format nil "(SETF_~A)" (symbol-name (cadr name)))
+                                *package*)
+                        name))
             (f-form `(,op ,name ,args ,@body))
             (macro-hook (if (equal ',op 'defmacro) ;; Macro require an injection into JSCL lexenv
                             (let ((ar (gensym)))
                                `((jscl::%compile-defmacro ',name
                                    (lambda (,ar) (exec-remote-macro ',name ,ar)))))
-                            nil)))
+                            nil))
+            (lam (if is-setf (gensym)))
+            (args2 (if is-setf
+                        (mapcar (lambda (a)
+                                  (declare (ignore a))
+                                  `(quote ,(gensym)))
+                                args)))
+            (asym (gensym))
+            (a2sym (gensym))
+            (bdsym (gensym)))
        `(progn
          ,@macro-hook
-         (remhash ',name *rpc-functions*) ;; Unregister possible RPC function with the same name
-         (setf (gethash-lock ',name *exportable-expressions*) ',f-form)
-         (remote-unintern ',name) ;; unintern the function in all connected browsers
-         (defmacro ,name (&rest args)
-            (if *in-f-macro*
-               `',(cons ',name (mapcar #'f-eval args))
-               (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
-                  `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
-         (if (not (assoc (function ,name) *exported-function-names*))
-             (setf *exported-function-names* (cons (cons (function ,name) ',name) *exported-function-names*))))))) ;; It is strange, but PUSH causes error here!
+         (remhash ',ex-sym *rpc-functions*) ;; Unregister possible RPC function with the same name
+         (setf (gethash-lock ',ex-sym *exportable-expressions*) ',f-form)
+         (remote-unintern ',ex-sym) ;; unintern the function in all connected browsers
+         ,(if is-setf
+              `(let* ((,asym ',args)
+                      (,bdsym ',body)
+                      (,a2sym (list ,@args2))
+                      (,lam (lambda ,(cdr args)
+                              (values
+                               (list ,@(cdr args2))
+                               (list ,@(cdr args))
+                               (list ,(car args2))
+                               `(apply (lambda ,,asym ,@,bdsym)
+                                       (list ,@,a2sym))
+                               (list ',(cdr name) ,@(cdr args2))))))
+                  (if (assoc ',(cadr name) jscl::*setf-expanders*)
+                      (setf (cdr (assoc ',(cadr name) jscl::*setf-expanders*)) ,lam)
+                      (push (cons ',(cadr name) ,lam) jscl::*setf-expanders*)))
+              `(progn
+                 (defmacro ,name (&rest args)
+                    (if *in-f-macro*
+                       `',(cons ',name (mapcar #'f-eval args))
+                       (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
+                          `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
+                 (if (not (assoc (function ,name) *exported-function-names*))
+                     (setf *exported-function-names* (cons (cons (function ,name) ',name) *exported-function-names*))))))))) ;; It is strange, but PUSH causes error here!
 
 (defmacro make-var-macro-f (op)
   "A macro for variables-parameters-constants definitions"
@@ -426,6 +456,26 @@ jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue=(mv,name,lexenv,ns)=>{
   }
   return res
 }
+
+const omgOriginalGSE=jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue
+jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
+  const set_name = '(SETF_'+fn.car.name+')'
+  if('car' in fn && 'name' in fn.car && 'package' in fn.car && fn.car.package.omgPkg && !(set_name in fn.car.package.symbols)) {
+    //console.log('NEED FETCH:',set_name, fn.car.package.packageName)
+    const full_name=fn.car.package.packageName+':'+set_name
+    omgInFetch[full_name]=true
+    let xhr=new XMLHttpRequest()
+    xhr.open('POST', omgBase+'" *root-path* "/" *gimme-path* "', false)
+    xhr.send(full_name)
+    if (xhr.status === 200) {
+      eval(xhr.response)
+    } else {
+      throw new Error('Cannot fetch set symbol '+fn.car.package.packageName+'::'+set_name)
+    }
+  }
+  return omgOriginalGSE(mv,fn)
+}
+
 
 const make_conn=()=>{
   console.log('Connecting to host')
