@@ -25,6 +25,7 @@
            jslog
            jsmax
            jsmin
+           js-parse-float
            jssin
            jscos
            jsrandom
@@ -50,6 +51,9 @@
 
 (defun-f winref (name)
   (jscl::oget (jscl::%js-vref "window") name))
+
+(defun-f js-parse-float (s)
+  (funcall (winref "parseFloat") (jscl::lisp-to-js s)))
 
 (defmacro-f async-bind (vcmd &rest cod)
   (let ((res (gensym)))
