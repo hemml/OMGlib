@@ -30,6 +30,7 @@
            jscos
            jsrandom
            load-js-script
+           local-storage
            make-dialog
            make-js-function
            make-js-object
@@ -54,6 +55,13 @@
 
 (defun-f js-parse-float (s)
   (funcall (winref "parseFloat") (jscl::lisp-to-js s)))
+
+(defun-f local-storage (key &optional def)
+  (let ((vl ((jscl::oget (winref "localStorage") "getItem") (jscl::lisp-to-js key))))
+    (if (jscl::js-null-p vl) def vl)))
+
+(defun-f (setf local-storage) (val key)
+  ((jscl::oget (winref "localStorage") "setItem") (jscl::lisp-to-js key) val))
 
 (defmacro-f async-bind (vcmd &rest cod)
   (let ((res (gensym)))

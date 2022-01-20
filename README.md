@@ -131,6 +131,8 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(js-parse-float s)` - convert a string to float (browser-side)
 
+- `(local-storage key)` `(setf (local-storage key) val)` - interface to `localStorage` API. Accepts any values, returns strings only.
+
 ### Creating SVG elements
 
 You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For exanple, the following code will return SVG-object with circle:
