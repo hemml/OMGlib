@@ -22,12 +22,18 @@
            get-element-id
            js-get-element-by-id
            jsfloor
+           jsln
            jslog
            jsmax
            jsmin
            js-parse-float
            jssin
            jscos
+           jstan
+           jsasin
+           jsacos
+           jsatan
+           jsatan2
            jsrandom
            load-js-script
            local-storage
@@ -123,6 +129,10 @@
   "Math.floor function"
   ((jscl::oget (jscl::%js-vref "Math") "floor") x))
 
+(defun-f jsln (&rest args)
+  "Math.log function"
+  (apply (jscl::oget (jscl::%js-vref "Math") "log") args))
+
 (defun-f jssin (&rest args)
   "Math.sin function"
   (apply (jscl::oget (jscl::%js-vref "Math") "sin") args))
@@ -130,6 +140,26 @@
 (defun-f jscos (&rest args)
   "Math.cos function"
   (apply (jscl::oget (jscl::%js-vref "Math") "cos") args))
+
+(defun-f jstan (&rest args)
+  "Math.tan function"
+  (apply (jscl::oget (jscl::%js-vref "Math") "tan") args))
+
+(defun-f jsasin (&rest args)
+  "Math.asin function"
+  (apply (jscl::oget (jscl::%js-vref "Math") "asin") args))
+
+(defun-f jsacos (&rest args)
+  "Math.acos function"
+  (apply (jscl::oget (jscl::%js-vref "Math") "acos") args))
+
+(defun-f jsatan (&rest args)
+  "Math.atan function"
+  (apply (jscl::oget (jscl::%js-vref "Math") "atan") args))
+
+(defun-f jsatan2 (&rest args)
+  "Math.atan2 function"
+  (apply (jscl::oget (jscl::%js-vref "Math") "atan2") args))
 
 (defun-f jsmin (&rest args)
   "Math.min function"

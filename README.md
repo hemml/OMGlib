@@ -76,7 +76,7 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(execute-after time callback)` - execute the `(callback)` after `time`, where `time` specified in seconds.
 
-- `(jsfloor num)` `(jsmax ...nums)` `(jsmin ...nums)` `(jsrandom)` `(jssin)` `(jscos)` - JS Math functions `Math.floor()`, `Math.max()`, `Math.min()`, `Math.random()`, `Math.sin()` and `Math.cos()`.
+- `(jsfloor num)` `(jsmax ...nums)` `(jsmin ...nums)` `(jsrandom)` `(jssin num)` `(jscos num)` `(jstan num)` `(jsasin num)` `(jsacos num)` `(jsatan num)` `(jsatan2 y x)` - JS Math functions `Math.floor()`, `Math.max()`, `Math.min()`, `Math.random()`, `Math.sin()`, `Math.cos()`, `Math.tan()`, `Math.asin()`, `Math.acos()`, `Math.atan()` and `Math.atan2()` .
 
 - `(jslog ...args)` - wrapper for `console.log()`
 
