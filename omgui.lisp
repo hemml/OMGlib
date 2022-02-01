@@ -92,10 +92,14 @@
            (process-cmd-tail (el cod)
              (if cod
                  (cond ((symbolp (car cod))
-                        (progn
-                          ((jscl::oget el "setAttribute")
-                           (symbol-name (car cod))
-                           (cadr cod))
+                        (let* ((path (js-string-split (symbol-name (car cod)) #\.))
+                               (obj (deep-oget-1 el path))
+                               (fld (car (last path))))
+                          (if (> (length path) 1)
+                              (jscl::oset (cadr cod) obj fld)
+                              ((jscl::oget el "setAttribute")
+                               (symbol-name (car cod))
+                               (cadr cod)))
                           (process-cmd-tail el (cddr cod))))
                        ((listp (car cod))
                         (progn
