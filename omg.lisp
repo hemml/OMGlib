@@ -834,7 +834,7 @@ self.addEventListener('activate', function(e) {
 self.addEventListener('fetch', function(e) {
   console.log('Fetch event:', e.request.url)
   bc.postMessage({type:'fetch', uri:e.request.url})
-  return fetch(e.request.url)
+  return fetch(e.request.clone())
 })
 ")
 
