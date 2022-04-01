@@ -17,6 +17,7 @@
            enable-back-button
            enable-scroll
            execute-after
+           find-widget
            gensym2
            get-dialog-data
            get-element-id
@@ -48,6 +49,7 @@
            prevent-page-close
            register-hash-cb
            remove-element
+           show-notification
            visible-width
            visible-height
            visible-left
@@ -329,7 +331,8 @@
                         :|style.display| "inline-block"
                         :|style.font| (system-font)
                         :|style.boxShadow| "0.5em 0.5em 1em gray"
-                        :|style.position| "absolute"))
+                        :|style.position| "absolute"
+                        :|omgwidget| "dialog"))
 
 (defun-f dialog-header (header)
   "Create a modal dialog header"
@@ -724,3 +727,75 @@
                           (jscl::oget (jscl::%js-vref "document") "head"))
           (push (cons css-text clsid) *style-cache*)))
     ((jscl::oget el "classList" "add") clsid)))
+
+(defparameter-f *notification-container* nil)
+
+(defun-f show-notification (header body &key period check)
+  (let* ((frame (create-element "div" :|style.border| "1pt solid black"
+                                      :|style.position| "relative"
+                                      :|style.margin| "0.5em"
+                                      :|style.background| "white"
+                                      :|style.width| "15em"
+                                      :|style.borderRadius| "0.2em"
+                                      :|style.minHeight| "5em"
+                                      :|style.boxShadow| "0 0 1em grey"
+                                      :|style.right| 0
+                                      :|omgwidget| "notification"))
+         (head-line (create-element "div" :|style.left| 0
+                                          :|style.right| 0
+                                          :|style.top| 0
+                                          :|style.padding| "0.25em"
+                                          :|style.position| "relative"
+                                          :|style.font| (omgui::system-font)))
+         (close-btn (create-element "div" :|style.borderRadius| "0.2em"
+                                          :|style.background| "red"
+                                          :|style.right| "0.25em"
+                                          :|style.top| "0.25em"
+                                          :|style.width| "0.5em"
+                                          :|style.aspectRatio| 1
+                                          :|style.boxShadow| "0 0 0.5em grey"
+                                          :|style.cursor| "pointer"
+                                          :|style.position| "absolute"
+                                          :|title| "close"
+                                          :|onclick| (lambda (ev)
+                                                       (remove-element frame))))
+         (body-cont (create-element "div" :|style.padding| "0.25em"
+                                          :|style.font| (omgui::system-font)))
+         (ncont (if *notification-container*
+                    *notification-container*
+                    (create-element "div" :|style.position| "absolute"
+                                          :|style.right| 0
+                                          :|style.top| 0))))
+    (if (not *notification-container*)
+        (progn
+          (setf *notification-container* ncont)
+          (append-element ncont)))
+    (append-element header head-line)
+    (append-element close-btn head-line)
+    (append-element head-line frame)
+    (append-element body body-cont)
+    (append-element body-cont frame)
+    (append-element frame ncont)
+    (if period
+        (let* ((sobs nil) ;; JSCL bug workaround
+               (obs (jscl::make-new (winref "MutationObserver")
+                      (lambda (&rest args)
+                        (if (jscl::js-null-p (jscl::oget frame "parentNode"))
+                            (if (or (not check) (funcall check))
+                                (execute-after period
+                                  (lambda ()
+                                    (append-element frame ncont)))
+                                ((jscl::oget sobs "disconnect"))))
+                        nil))))
+          (setf sobs obs) ;; JSCL bug workaround
+          ((jscl::oget obs "observe") ncont (make-js-object :|childList| t))))))
+
+(defun-f find-widget (ev &optional type)
+  (labels ((get-wg (el)
+             (let ((w (jscl::oget el "omgwidget")))
+               (if (and w (or (not type) (equal w type)))
+                   el
+                   (let ((par (jscl::oget el "parentNode")))
+                     (if (and par (not (jscl::js-null-p par)))
+                         (get-wg par)))))))
+    (get-wg (jscl::oget ev "target"))))

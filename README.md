@@ -133,6 +133,34 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(local-storage key &optional def-val)` `(setf (local-storage key) val)` - interface to the `localStorage` API. Accepts any values, returns strings only.
 
+- `(show-notification header body &key period check)` - show notification (not a browser notification, just a widget) with header and body (might be strings or dom elements). Supply `period` parameter if you want to show the notification again after some period (in seconds), if user closes it. If function `check` supplied, it will called before notification reappear and if returns `nil` the notification will not be shown anymore.
+
+  Example:
+
+  ```
+  (let ((cnt 3))
+    (show-notification
+      (create-element "div" :|innerHTML| "New notofocation!"
+                            :|style.color| "red")
+      (create-element "div"
+        :append-element "Click "
+        :append-element (create-element "a"
+                          :|href| "#"
+                          :|onclick| (lambda (ev)
+                                       (remove-element
+                                         (find-widget ev "notification")) ;; Just remove notification
+                                                ;; The (find-widget) used to get a DOM object of notification widget
+                                       nil)
+                          :append-element "here")
+        :append-element " and see what will happens!")
+      :period 5
+      :check (lambda ()
+               (setf cnt (- cnt 1))
+               (> cnt 0))))
+  ```
+
+- `(find-widget ev &optional name)` - the function can be used to get a DOM element of the widget, which received an event `ev`. See `(show-notification)` example.
+
 ### Creating SVG elements
 
 You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For exanple, the following code will return SVG-object with circle:
