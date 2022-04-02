@@ -505,6 +505,10 @@
 
 (defun make-omg-daemon (port) ;; Dump daemon image, specify proxy port
   (setf *proxy-port* port)
+  (swank:create-server :port 4008 :dont-close t)
+  (swank:stop-server 4008)
+  (start-server)
+  (kill-server)
   (sb-ext:save-lisp-and-die (merge-pathnames (make-pathname :name "omgdaemon"))
                             :executable t :save-runtime-options t :purify t :toplevel #'run-daemon))
 
