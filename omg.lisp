@@ -905,7 +905,9 @@ self.addEventListener('fetch', function(e) {
                         :ssl-cert-file ,*ssl-cert*
                         ,@*last-args*))))
 
-(defun kill-server () (if *serv* (clack::stop *serv*)))
+(defun kill-server ()
+  (map nil #'clrhash (list *gimme-wait-list* *takit-wait-list* *session-list*))
+  (if *serv* (clack::stop *serv*)))
 
 (defun restart-server (&rest args)
   (progn
