@@ -1,5 +1,5 @@
 (defpackage :omgui
-  (:use cl omg jscl bordeaux-threads)
+  (:use cl omg jscl bordeaux-threads omgdaemon)
   (:export add-style
            add-youtube-player
            append-element
@@ -16,6 +16,7 @@
            element-height
            enable-back-button
            enable-scroll
+           ensure-last-version
            execute-after
            find-widget
            gensym2
@@ -799,3 +800,23 @@
                      (if (and par (not (jscl::js-null-p par)))
                          (get-wg par)))))))
     (get-wg (jscl::oget ev "target"))))
+
+(defun-r need-reload ()
+  (and (not (equal *omg-version* +devel-version+))
+       (not (equal *omg-version* *omg-last-version*))))
+
+(defun-r get-omg-cookie-name ()
+  +omg-version-cookie+)
+
+(defun-r get-last-version ()
+  *omg-last-version*)
+
+(defun-r get-my-version ()
+  *omg-version*)
+
+(defun-f ensure-last-version ()
+  (if (need-reload)
+      (progn
+        (setf (jscl::oget (jscl::%js-vref "document") "cookie")
+              (format nil "~A=~A" (get-omg-cookie-name) (get-last-version)))
+        ((jscl::oget (jscl::%js-vref "location") "reload") t))))

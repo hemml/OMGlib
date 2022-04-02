@@ -1,15 +1,17 @@
 (defsystem "omg"
   :description "A Common Lisp library to build fully dynamic web interfaces"
-  :version "0.1.8"
+  :version "0.2.0"
   :author "Pavel Kaygorodov <hemml@me.com>"
   :licence "GPLv3"
   :homepage "https://github.com/hemml/OMGlib"
   :source-control "https://github.com/hemml/OMGlib.git"
-  :depends-on ("clack" "websocket-driver-server" "bordeaux-threads" "trivial-utf-8" "media-types" "pngload" "skippy" "cl-jpeg")
+  :depends-on ("clack" "websocket-driver-server" "bordeaux-threads" "trivial-utf-8" "media-types"
+               "pngload" "skippy" "cl-jpeg" "swank" "osicat" "usocket" "uiop" "find-port" "inferior-shell")
   :components ((:static-file "README.md")
                (:static-file "LICENSE")
                (:file "omg")
-               (:file "omgui" :depends-on ("omg"))))
+               (:file "omgdaemon" :depends-on ("omg"))
+               (:file "omgui" :depends-on ("omg" "omgdaemon"))))
 
 (defparameter *jscl-dir* (merge-pathnames (make-pathname :directory '(:relative "jscl"))
                                           (asdf:system-source-directory :omg)))
