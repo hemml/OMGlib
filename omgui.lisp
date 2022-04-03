@@ -22,6 +22,8 @@
            gensym2
            get-dialog-data
            get-element-id
+           get-omg-cookie-name
+           get-my-version
            js-get-element-by-id
            jsfloor
            jsln
