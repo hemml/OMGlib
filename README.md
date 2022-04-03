@@ -395,3 +395,93 @@ Worker process sending broadcast message for every `fetch` request, the app can 
               (let ((uri (jscl::oget msg "data" "uri")))
                 (jslog "FETCH:" uri))))))
 ```
+
+## OMG daemon mode
+
+**WARNING:** the following functionality is in early alpha version now, it will work only in POSIX compatible environments (Linux, MacOS X) and only with `SBCL`, but easely can be ported to another CL compilers.
+
+OMGlib allows developers to work with code via REPL, but all of the changes are applied immediately, so, you need two copies of your code -- local development version and production one, which is updated less frequently. Each production code update causes a server restart, so all connected clients will lose they connections and will have to reconnect. After the reconnection, browser still has functions from previous version, which may lead to problems.
+
+OMGlib offers a better way to maintain version updating. The special daemon `omgdaemon` is spawned and works as a reverse-proxy, which accepts http connections and, basing on special cookie `OMGVERSION`, connects clients to specific versions. Here is one special version with name `"devel"`, where developer(s) can do any development works, using swank connection via standard port 4008\. When the version will be good enough to be pushed into production, the `(commit-production)` function is called and lisp image is saved to disk and gets an unique version name. After that, all new connections will be redirected to this version and new `"devel"` version will be spawned again. If there was previous versions with clients connected, they will receive notification (the `(commit-notify new-version)` function will be called) so they can offer version update to the clients. Also, the browser-side function `(ensure-last-version)` can be called at boot-time, to check is it a latest version and perform page reload to proceed to the top version if necessary.
+
+The following code can be used to work in `omgdaemon` environment:
+
+```
+(defpackage :my-package
+  (:use cl omg omgui jscl omgdaemon)) ;; Import omgdaemon
+
+(defparameter-f *page-shown* nil)
+
+(defun-f my-boot () ;; this function will be called after each WebSocket connection
+  (if (not *page-shown*) ;; The page is just loaded
+      (progn
+        (register-hash-cb "#devel" ;; The way to proceed to "devel" version using #devel hash
+          (lambda ()
+            (if (not (equal (get-my-version) "devel")) ;; If the version is not a "devel" already
+                (progn
+                  (setf (jscl::oget (jscl::%js-vref "document") "cookie")
+                        (format nil "~A=devel" (get-omg-cookie-name))) ;; set the version cookie
+                  (allow-page-close)
+                  ((jscl::oget (jscl::%js-vref "location") "reload") t))))) ;; Hard reload!
+        (ensure-last-version)
+        (setf *page-shown* t)
+        (init-gui)))) ;; Show page contents
+
+(defun-f show-commit-notify (cookie-name version) ;; Show a notification if a new version is available
+  (show-notification
+    (create-element "div" :|innerHTML| "New version available!"
+                          :|style.color| "red")
+    (create-element "div"
+      :append-element "Save you work and click "
+      :append-element (create-element "a"
+                        :|href| "#"
+                        :|onclick|
+                          (lambda (ev)
+                            (setf (jscl::oget (jscl::%js-vref "document") "cookie")
+                                  (format nil "~A=~A" cookie-name version))
+                            (allow-page-close)
+                            ((jscl::oget (jscl::%js-vref "location") "reload") t)
+                            nil)
+                        :append-element "here")
+      :append-element " to proceed to new version.")
+    :period 600) ;; Remind every 10 minutes
+  nil)
+
+(defun commit-notify (version)
+  (remote-exec `(show-commit-notify ,+omg-version-cookie+ ,version))
+  nil)
+
+;; omg-init will be called after version spawn
+
+(defvar old-init #'omg-init) ;; Save the default init function
+
+(defun omg-init (port)
+  ;; Put here all your initialization -- connect to the database, etc...
+  (funcall old-init port))
+
+(add-to-boot '(my-boot)) ;; Add #'mu-boot to the boot sequence
+```
+
+## Making an `omgdaemon` image
+
+The `omgdaemon` image can be built with the following command:
+
+```
+sbcl --eval "(require :omg)" --eval "(omgdaemon:make-omg-daemon 80)"
+```
+
+where `80` is a port where proxy will accept HTTP connections. The daemon will store version images in `.omg` subdirectory.
+
+## Using docker container
+
+The most convinient way to run `omgdaemon` is to put it into a docker container. You can build a docker image with the following command:
+
+```
+sbcl --eval "(require :omg)" --eval "(omgdaemon::make-docker-image)" --quit
+```
+
+The image can be started in the following way to serve on port `7575` on `localhost`:
+
+```
+docker run -d -p 127.0.0.1:7575:80 -p 127.0.0.1:4008:4008 omgdaemon
+```
