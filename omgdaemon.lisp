@@ -18,33 +18,33 @@
 (defvar *main-st-o* nil)
 (defvar *main-lock* nil)
 
-(defparameter +app_prefix+ "omg_app_") ;; Prefix for dumped version images
-(defparameter +devel-version+ "devel") ;; Name of development version
-(defparameter +omg-images-path+ (merge-pathnames (make-pathname :directory '(:relative ".omg")))) ;; path to store version images
+(defvar +app_prefix+ "omg_app_") ;; Prefix for dumped version images
+(defvar +devel-version+ "devel") ;; Name of development version
+(defvar +omg-images-path+ (merge-pathnames (make-pathname :directory '(:relative ".omg")))) ;; path to store version images
 
-(defparameter +proxy-chunk-size+ 65536) ;; Buffer size for internal proxy
-(defparameter +omg-version-cookie+ "OMGVERSION") ;; Internal proxy cookie name
+(defvar +proxy-chunk-size+ 65536) ;; Buffer size for internal proxy
+(defvar +omg-version-cookie+ "OMGVERSION") ;; Internal proxy cookie name
 
-(defparameter +version-cookie-prefix+ (concatenate 'string +omg-version-cookie+ "=")) ;; Cookie prefix, just to speed-up cookie extraction process
+(defvar +version-cookie-prefix+ (concatenate 'string +omg-version-cookie+ "=")) ;; Cookie prefix, just to speed-up cookie extraction process
 
-(defparameter *forks* (make-hash-table :test #'equal)) ;; Hash to store started versions data: I/O streams and fds, pid, etc
+(defvar *forks* (make-hash-table :test #'equal)) ;; Hash to store started versions data: I/O streams and fds, pid, etc
 
-(defparameter *proxy-sock* nil) ;; Listening proxy socket. Setf to nil to kill proxy and all proxy threads.
+(defvar *proxy-sock* nil) ;; Listening proxy socket. Setf to nil to kill proxy and all proxy threads.
 
-(defparameter *omg-version* +devel-version+) ;; Current version name (string), default to devel
-(defparameter *omg-last-version* +devel-version+) ;; Current version name (string), default to devel
+(defvar *omg-version* +devel-version+) ;; Current version name (string), default to devel
+(defvar *omg-last-version* +devel-version+) ;; Current version name (string), default to devel
 
-(defparameter +nl-code+ (char-code #\Newline))
-(defparameter +cr-lf+ (trivial-utf-8:string-to-utf-8-bytes (format nil "~C~C" #\Return #\Newline)))
+(defvar +nl-code+ (char-code #\Newline))
+(defvar +cr-lf+ (trivial-utf-8:string-to-utf-8-bytes (format nil "~C~C" #\Return #\Newline)))
 
-(defparameter *prevent-devel-startup* nil) ;; Setf to T to temporary prevent development version startup, use to avoid race condition while new version commit
+(defvar *prevent-devel-startup* nil) ;; Setf to T to temporary prevent development version startup, use to avoid race condition while new version commit
 
 (defun omg-init (port)     ;; Called at version startup
   (setf omg::*port* port)
   (restart-server :address "127.0.0.1"))
 
-(defparameter +keyword-pkg+ (find-package "KEYWORD"))
-(defparameter +nil-str+ (write-to-string (list nil)))
+(defvar +keyword-pkg+ (find-package "KEYWORD"))
+(defvar +nil-str+ (write-to-string (list nil)))
 
 (defun get-cmd-res (cmd) ;; Eval cmd and return results as a readable string
   (let* ((r1 (ignore-errors (multiple-value-list (eval cmd))))
@@ -487,7 +487,7 @@
         (usocket:socket-close psock)
         (setf *proxy-sock* nil)))))
 
-(defparameter *proxy-port* 80)
+(defvar *proxy-port* 80)
 
 (defun run-daemon () ;; Toplevel function for daemon startup
   (if (not omg::*giant-hash-lock*)
@@ -530,4 +530,3 @@
   (run '(and (cd "/home/omg/quicklisp/local-projects/OMGlib")
              (git pull :rebase)))
   (require :omg))
-  
