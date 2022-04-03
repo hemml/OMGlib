@@ -26,25 +26,25 @@
 
 (defconstant |sid-length| 10) ;; the length for all random IDs generated
 
-(defparameter *local-compile* t) ;; if T -- compile all lisp code to JS on the server side
-                                 ;; can be altered without page reloading or server restart
+(defvar *local-compile* t) ;; if T -- compile all lisp code to JS on the server side
+                           ;; can be altered without page reloading or server restart
 
 ;; Here are the paths for all HTTP(s) queries (the page reload required after change):
 
-(defparameter *root-path* "") ;; must be started with "/"
-(defparameter *html-path* "") ;; the path (relative to *root-path*) for simple html page with injcetced js
-(defparameter *js-path* "j")  ;; the path of js for injection (relative to *root-path*)
-(defparameter *ws-path* "s")  ;; websocket path (relative to *root-path*)
-(defparameter *rpc-path* "r") ;; rpc call path (relative to *root-path*)
-(defparameter *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
-(defparameter *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
-(defparameter *port* 7500) ;; default server port
+(defvar *root-path* "") ;; must be started with "/"
+(defvar *html-path* "") ;; the path (relative to *root-path*) for simple html page with injcetced js
+(defvar *js-path* "j")  ;; the path of js for injection (relative to *root-path*)
+(defvar *ws-path* "s")  ;; websocket path (relative to *root-path*)
+(defvar *rpc-path* "r") ;; rpc call path (relative to *root-path*)
+(defvar *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
+(defvar *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
+(defvar *port* 7500) ;; default server port
 
-(defparameter *use-wss* nil) ;; if T -- use wss:// protocol for websocket
-(defparameter *ssl-key* nil) ;; SSL key path
-(defparameter *ssl-cert* nil) ;; SSL cert path
+(defvar *use-wss* nil) ;; if T -- use wss:// protocol for websocket
+(defvar *ssl-key* nil) ;; SSL key path
+(defvar *ssl-cert* nil) ;; SSL cert path
 
-(defparameter *giant-hash-lock* nil) ;; A giant lock to make hashes thread safe
+(defvar *giant-hash-lock* nil) ;; A giant lock to make hashes thread safe
 
 (defun gethash-lock (key hash)
   (if *giant-hash-lock*
@@ -86,20 +86,20 @@
         (random-key h len)
         k)))
 
-(defparameter *exportable-expressions* (make-hash-table)) ;; All exportable functions are here
-(defparameter *rpc-functions* (make-hash-table))          ;; The allowed RPC functions registry
-(defparameter *gimme-wait-list* (make-hash-table))        ;; The temporary storage for gimme-threads,
+(defvar *exportable-expressions* (make-hash-table)) ;; All exportable functions are here
+(defvar *rpc-functions* (make-hash-table))          ;; The allowed RPC functions registry
+(defvar *gimme-wait-list* (make-hash-table))        ;; The temporary storage for gimme-threads,
                                                     ;;   waiting compilation results
                                                     ;; FIXME: periodic cleanup procedure needed!
-(defparameter *takit-wait-list* (make-hash-table))        ;; The temporary storage for compilation threads,
+(defvar *takit-wait-list* (make-hash-table))        ;; The temporary storage for compilation threads,
                                                     ;;   waiting for macro expansion results from browser side
                                                     ;; FIXME: periodic cleanup procedure needed!
 
-(defparameter *in-f-macro* nil)   ;; If T -- do not convert -f function calls to (remote-exec ...) (don't change manually!!!)
+(defvar *in-f-macro* nil)   ;; If T -- do not convert -f function calls to (remote-exec ...) (don't change manually!!!)
 
-(defparameter *exported-function-names* nil) ;; association list where browser-side functions associated with their names
+(defvar *exported-function-names* nil) ;; association list where browser-side functions associated with their names
 
-(defparameter *local-lambdas* (make-hash-table)) ;; list of unnamed functions, passed as arguments to browser-side ones
+(defvar *local-lambdas* (make-hash-table)) ;; list of unnamed functions, passed as arguments to browser-side ones
                                            ;; used by exec-local-lambda RPC-function to determine what lambda to execute
 
 (defun register-rpc (name)
@@ -232,15 +232,15 @@
 (make-var-macro-f defparameter) ;; defparameter-f
 (make-var-macro-f defconstant)  ;; defconstant-f
 
-(defparameter *extra-html* "")
+(defvar *extra-html* "")
 
-(defparameter *pwa-mainfest* nil)
-(defparameter *pwa-icon* nil)
-(defparameter *pwa-path* "pwa")
-(defparameter *pwa-icon-file* nil)
-(defparameter *pwa-icon-type* nil)
-(defparameter *pwa-name* nil)
-(defparameter *pwa-sw-js-name* nil)
+(defvar *pwa-mainfest* nil)
+(defvar *pwa-icon* nil)
+(defvar *pwa-path* "pwa")
+(defvar *pwa-icon-file* nil)
+(defvar *pwa-icon-type* nil)
+(defvar *pwa-name* nil)
+(defvar *pwa-sw-js-name* nil)
 
 (defun make-pwa (&key (name "Application")
                       (short-name "app")
@@ -511,11 +511,11 @@ const make_conn=()=>{
 }})()
 "))
 
-(defparameter *current-session* nil)       ;; The current session, usually set by remote-exec
-(defparameter *session-list* (make-hash-table))  ;; The store for session objects, keys are session-ids
-(defparameter *current-res* nil) ;; The key for gimme-wait-list hash, denotes the place where to store result for
+(defvar *current-session* nil)       ;; The current session, usually set by remote-exec
+(defvar *session-list* (make-hash-table))  ;; The store for session objects, keys are session-ids
+(defvar *current-res* nil) ;; The key for gimme-wait-list hash, denotes the place where to store result for
                                  ;;   current gimme request
-(defparameter *in-rpc* nil) ;; If T -- we are in RPC call, all remote-execs must be done via takit-mechanism
+(defvar *in-rpc* nil) ;; If T -- we are in RPC call, all remote-execs must be done via takit-mechanism
 
 (defun current-session-id ()
   (if *current-session*
@@ -541,7 +541,7 @@ const make_conn=()=>{
   `(let ((*current-session* ,sess))
       ,@body))
 
-(defparameter *debug-session-id* nil)
+(defvar *debug-session-id* nil)
 
 (defun set-debug-session (sid)
   (setf *debug-session-id* sid)
@@ -558,7 +558,7 @@ const make_conn=()=>{
 (defmacro def-session-var (vr &optional init)
   (let ((h (gensym)))
     `(progn
-       (defparameter ,h (make-hash-table))
+       (defvar ,h (make-hash-table))
        (define-symbol-macro ,vr
          (gethash (current-session-id) ,h ,init)))))
 
@@ -757,7 +757,7 @@ const make_conn=()=>{
           (exec)
           (loop for s being the hash-values of *session-list* collect (with-session s (exec)))))))
 
-(defparameter *boot-functions* nil)
+(defvar *boot-functions* nil)
 
 (defun add-to-boot (f)
   (push f *boot-functions*))
@@ -818,7 +818,7 @@ const make_conn=()=>{
     (read-sequence tseq s)
     (utf-8-bytes-to-string tseq)))
 
-(defparameter *pwa-sw-js* "
+(defvar *pwa-sw-js* "
 const bc = new BroadcastChannel('omg_service_worker');
 
 self.addEventListener('install', function(e) {
@@ -887,9 +887,9 @@ self.addEventListener('fetch', function(e) {
                (start-connection ws))))
           (t '(404 (:content-type "text/plain") ("File not found"))))))
 
-(defparameter *serv* nil)
+(defvar *serv* nil)
 
-(defparameter *last-args* nil)
+(defvar *last-args* nil)
 
 (defun start-server (&rest args)
   (if args (setf *last-args* args))
