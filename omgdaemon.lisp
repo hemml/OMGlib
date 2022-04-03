@@ -86,12 +86,7 @@
        (equal (ignore-errors (subseq (file-namestring path) 0 (length +app_prefix+)))
               +app_prefix+)))
 
-(defun makimg (path) ;; save lisp image. FIXME: SBCL only for now
-  (ensure-directories-exist path)
-  (ignore-errors
-    (progn
-      (kill-server)
-      (swank:stop-server 4008)))
+(defun kill-all-threads ()
   (loop while (cdr (bt:all-threads)) do
     (progn
       (map nil
@@ -100,7 +95,15 @@
               (bt:destroy-thread thr)))
         (bt:all-threads))
       (if (cdr (bt:all-threads))
-          (sleep 1))))
+          (sleep 1)))))
+
+(defun makimg (path) ;; save lisp image. FIXME: SBCL only for now
+  (ensure-directories-exist path)
+  (ignore-errors
+    (progn
+      (kill-server)
+      (swank:stop-server 4008)))
+  (kill-all-threads)
   (sb-ext:gc :full t)
   (sb-ext:save-lisp-and-die path :executable t :save-runtime-options t :purify t :toplevel #'run-main))
 
@@ -509,6 +512,8 @@
   (swank:stop-server 4008)
   (start-server)
   (kill-server)
+  (kill-all-threads)
+  (sb-ext:gc :full t)
   (sb-ext:save-lisp-and-die (merge-pathnames (make-pathname :name "omgdaemon"))
                             :executable t :save-runtime-options t :purify t :toplevel #'run-daemon))
 
