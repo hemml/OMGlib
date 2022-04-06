@@ -556,7 +556,7 @@ const make_conn=()=>{
            (warn "Cannot find debug session!")))))
 
 (defmacro def-session-var (vr &optional init)
-  (let ((h (gensym)))
+  (let ((h (gentemp)))
     `(progn
        (defvar ,h (make-hash-table))
        (define-symbol-macro ,vr
