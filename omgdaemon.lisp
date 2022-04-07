@@ -530,7 +530,7 @@
             "RUN adduser omg"
             "RUN su -l omg -c 'sbcl --load \"/usr/share/common-lisp/source/quicklisp/quicklisp.lisp\" --eval \"(quicklisp-quickstart:install)\"'"
             "RUN su -l omg -c 'mkdir -p /home/omg/quicklisp/local-projects && cd /home/omg/quicklisp/local-projects && git clone --recurse-submodules https://github.com/hemml/OMGlib.git'"
-            "RUN su -l omg -c 'cd /home/omg && sbcl --eval \"(load \\\"/home/omg/quicklisp/setup.lisp\\\")\" --eval \"(ql:quickload :omg)\" --eval \"(omgdaemon:make-omg-daemon 80)\"'"
+            "RUN su -l omg -c 'cd /home/omg && sbcl --eval \"(load \\\"/home/omg/quicklisp/setup.lisp\\\")\" --eval \"(ql:quickload :omg)\" --eval \"(omgdaemon:make-omg-daemon 8080)\"'"
             "EXPOSE 80 4008"
             "CMD while true; do su -l omg -c 'cd /home/omg && ./omgdaemon' ; sleep 1 ; done")))
     (run '(docker build :tag omgdaemon :pull :no-cache -) :input fd)))
