@@ -68,7 +68,11 @@
         (setf *main-st-i* (swank/backend:make-fd-stream (parse-integer (caddr args)) :UTF-8)))
     (if (cadddr args)
         (setf *main-st-o* (swank/backend:make-fd-stream (parse-integer (cadddr args)) :UTF-8)))
-    (if (cddr args) (setf *main-lock* (bt:make-lock)))
+    (if (cddr args)
+        (progn
+          (setf *main-lock* (bt:make-lock))
+          (sb-debug::enable-debugger)
+          (setf sb-impl::*descriptor-handlers* nil)))
     (loop while (and (open-stream-p st-i) (open-stream-p st-o)) do
       (let* ((cmd (ignore-errors (read st-i nil eofv)))
              (res (if (not (equal cmd eofv)) (get-cmd-res (eval cmd)))))
