@@ -467,10 +467,10 @@ The following code can be used to work in `omgdaemon` environment:
 The `omgdaemon` image can be built with the following command:
 
 ```
-sbcl --eval "(require :omg)" --eval "(omgdaemon:make-omg-daemon 80)"
+sbcl --eval "(require :omg)" --eval "(omgdaemon:make-omg-daemon 8080)"
 ```
 
-where `80` is a port where proxy will accept HTTP connections. The daemon will store version images in `.omg` subdirectory.
+where `8080` is a port where proxy will accept HTTP connections. The daemon will store version images in `.omg` subdirectory.
 
 ## Using docker container
 
