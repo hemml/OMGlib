@@ -95,12 +95,15 @@
             (lambda ()
               (loop do
                 (progn
-                  (bt:wait-on-semaphore *server-set-sem*)
+                  (bt:wait-on-semaphore *server-set-sem* :timeout 1)
                   (if *server-set-list*
-                      (map nil
-                        (lambda (kv)
-                          (set (car kv) (cdr kv)))
-                        *server-set-list*))))))))
+                      (ignore-errors
+                        (progn
+                          (map nil
+                               (lambda (kv)
+                                 (set (car kv) (cdr kv)))
+                               *server-set-list*)
+                          (setf *server-set-list* nil))))))))))
     (loop while (and (open-stream-p st-i) (open-stream-p st-o)) do
       (let* ((cmd (ignore-errors (read st-i nil eofv)))
              (res (if (not (equal cmd eofv)) (get-cmd-res (eval cmd)))))
