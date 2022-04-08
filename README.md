@@ -462,6 +462,8 @@ The following code can be used to work in `omgdaemon` environment:
 (add-to-boot '(my-boot)) ;; Add #'mu-boot to the boot sequence
 ```
 
+You can use standadrd slime/swank to connect to the `devel` image and perform any REPL work. To simplify a debugging process, you can eval `(steal-swank)` function first, to redirect all output and debugger hooks into your swank session.
+
 ## Making an `omgdaemon` image
 
 The `omgdaemon` image can be built with the following command:

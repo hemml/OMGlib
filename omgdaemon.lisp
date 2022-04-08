@@ -9,6 +9,8 @@
            commit-production ;; Commit the image as a production version
            make-omg-daemon ;; Dump daemon image, specify proxy port
            commit-notify ;; The fucntion called on versions when new production version commited
+           version-set-sym ;; Set symbol value in server (version) context
+           steal-swank     ;; Redirect all standard/error output and debugger hooks to the current swank session
            +omg-version-cookie+ ;; cookie name
            +devel-version+))    ;; development version name
 
@@ -56,6 +58,21 @@
                   (if (= l (length str)) str +nil-str+)))))
     (if re1 re1 +nil-str+)))
 
+(defparameter *server-set-list* nil)
+(defparameter *server-set-sem* nil)
+
+(defun version-set-sym (var val) ;; Set symbol value in server (version) context
+  (push (cons var val) *server-set-list*)
+  (bt:signal-semaphore *server-set-sem*))
+
+(defun steal-swank () ;; Redirect all standard/error output and debugger hooks to the current swank session
+  (mapcar
+    (lambda (s)
+      (push (cons s (symbol-value s)) *server-set-list*))
+    '(*standard-output* *error-output* *debugger-hook* sb-ext:*invoke-debugger-hook*))
+  (bt:signal-semaphore *server-set-sem*))
+
+
 (defun run-main () ;; toplevel function, called after image startup. Waiting and executing commands from proxy
   (let* ((args (uiop:command-line-arguments))
          (fds (mapcar #'parse-integer args))
@@ -72,7 +89,18 @@
         (progn
           (setf *main-lock* (bt:make-lock))
           (sb-debug::enable-debugger)
-          (setf sb-impl::*descriptor-handlers* nil)))
+          (setf sb-impl::*descriptor-handlers* nil)
+          (setf *server-set-sem* (bt:make-semaphore))
+          (bt:make-thread ;; process symbol-set requests to set symbol values in the server (version) context
+            (lambda ()
+              (loop do
+                (progn
+                  (bt:wait-on-semaphore *server-set-sem*)
+                  (if *server-set-list*
+                      (map nil
+                        (lambda (kv)
+                          (set (car kv) (cdr kv)))
+                        *server-set-list*))))))))
     (loop while (and (open-stream-p st-i) (open-stream-p st-o)) do
       (let* ((cmd (ignore-errors (read st-i nil eofv)))
              (res (if (not (equal cmd eofv)) (get-cmd-res (eval cmd)))))
