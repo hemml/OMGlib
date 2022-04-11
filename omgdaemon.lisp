@@ -145,6 +145,9 @@
 (defun make-tmp-version (version) ;; construct a temporary version name (used while image dump, just to prevent current image damage)
   (format nil "tmp_~A" version))
 
+(defun tmp-version-p (version)
+  (equal "tmp_" (subseq version 0 4)))
+
 (defun get-version-info (version) ;; Return an alist with version info -- streams, fds, pid, etc. Returns NIL if process not alive.
   (let* ((frk (omg::gethash-lock version *forks*))
          (pid (if frk (cdr (assoc :pid frk)))))
@@ -186,8 +189,10 @@
 (defun get-top-version () ;; Return latest (by write time) production version, or "devel" if no production versions yet
   (let* ((files (remove-if
                   (lambda (path)
-                    (equal (subseq (file-namestring path) (length +app_prefix+))
-                           +devel-version+))
+                    (let ((fname (file-namestring path)))
+                      (or  (equal (subseq fname (length +app_prefix+))
+                                  +devel-version+)
+                           (tmp-version-p fname))))
                   (remove-if-not #'version-path-p
                                  (directory (merge-pathnames (make-pathname :name :wild :type :wild) +omg-images-path+)))))
          (tvf (car (sort (mapcar #'cons files (mapcar #'file-write-date files)) #'> :key #'cdr))))
