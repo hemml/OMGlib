@@ -16,6 +16,8 @@
 
 (in-package :omgdaemon)
 
+(require :hunchentoot)
+
 (defvar *main-st-i* nil) ;; Streams and lock for devel<->daemon communications
 (defvar *main-st-o* nil)
 (defvar *main-lock* nil)
