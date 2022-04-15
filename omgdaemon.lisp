@@ -134,10 +134,26 @@
 
 (defun makimg (path) ;; save lisp image. FIXME: SBCL only for now
   (ensure-directories-exist path)
-  (ignore-errors
-    (progn
-      (kill-server)
-      (swank:stop-server 4008)))
+  (ignore-errors (kill-server))
+  (swank:stop-server 4008)
+  (loop for i below 10 ;; Wait for swank shutdown
+    while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
+    do (progn
+         (format t "Waiting for swank shutdown. Please, close all connections!~%")
+         (sleep 1)))
+  (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
+      (progn
+        (format t "SWANK NOT DEAD!!1111~%")
+        (map nil
+          (lambda (conn)
+            (ignore-errors (close (swank::connection.socket-io conn))))
+          swank::*connections*)))
+  (loop for i below 10 ;; Wait for swank shutdown
+    while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
+    do (progn
+         (format t "Waiting for swank shutdown. Please, close all connections!~%")
+         ;;;(swank:stop-server 4008)
+         (sleep 1)))
   (kill-all-threads)
   (sb-ext:gc :full t)
   (sb-ext:save-lisp-and-die path :executable t :save-runtime-options t :purify t :toplevel #'run-main))
@@ -218,6 +234,8 @@
           (format t "Killing version ~A~%" version)
           (bt:make-thread
             (lambda ()
+              (if (and (equal version +devel-version+) *prevent-devel-startup*) ;; Don't try to restart development version while image saved
+                  (loop for i below 60 while *prevent-devel-startup* do (sleep 1)))
               (loop for i below 5 while (ignore-errors (osicat-posix:kill pid 0)) do (sleep 1))
               (if (ignore-errors (osicat-posix:kill pid 0))
                   (progn
@@ -318,6 +336,7 @@
                                             (send-cmd-to version
                                               '(progn
                                                 (setf swank::*loopback-interface* "0.0.0.0")
+                                                (setf swank:*globally-redirect-io* t)
                                                 (swank:create-server :port 4008 :dont-close t)))
                                             (loop
                                               while (and (open-stream-p st-di)
@@ -341,6 +360,7 @@
                                                    (setf omgdaemon::*omg-version* ,version) ;; Allow the process to know its version
                                                    (setf omgdaemon::*omg-last-version* ,(get-top-version))
                                                    (omg-init ,port)))
+                           (if is-dev (send-cmd-to version `(setf hunchentoot:*catch-errors-p* nil)))
                            (wait-for-version-startup version)
                            (if (version-alive-p version)
                                (format t "Version [~A] spawned!~%" version)
@@ -547,11 +567,19 @@
     (proxy *proxy-port*)))
 
 (defun make-omg-daemon (port) ;; Dump daemon image, specify proxy port
+  (swank-loader:init
+    :delete nil         ; delete any existing SWANK packages
+    :reload nil         ; reload SWANK, even if the SWANK package already exists
+    :load-contribs nil)
   (setf *proxy-port* port)
-  (swank:create-server :port 4008 :dont-close t)
-  (swank:stop-server 4008)
-  (start-server)
-  (kill-server)
+  (setf swank:*globally-redirect-io* t)
+  (loop for i below 20 ;; Wait for swank shutdown
+    while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
+    do (progn
+         (format t "Waiting for swank shutdown...~%")
+         (sleep 1)))
+  (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
+      (format t "SWANK NOT DEAD!!1111~%"))
   (kill-all-threads)
   (sb-ext:gc :full t)
   (sb-ext:save-lisp-and-die (merge-pathnames (make-pathname :name "omgdaemon"))
