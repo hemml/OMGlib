@@ -145,12 +145,11 @@
          (format t "Waiting for swank shutdown. Please, close all connections!~%")
          (sleep 1)))
   (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
-      (progn
-        (format t "SWANK NOT DEAD!!1111~%")
-        (map nil
-          (lambda (conn)
-            (ignore-errors (close (swank::connection.socket-io conn))))
-          swank::*connections*)))
+      (format t "SWANK NOT DEAD!!1111~%"))
+  (map nil
+    (lambda (conn)
+      (ignore-errors (close (swank::connection.socket-io conn))))
+    swank::*connections*)
   (loop for i below 10 ;; Wait for swank shutdown
     while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
     do (progn
@@ -158,8 +157,8 @@
          ;;;(swank:stop-server 4008)
          (sleep 1)))
   (kill-all-threads)
-  (sb-ext:gc :full t)
-  (sb-ext:save-lisp-and-die path :executable t :save-runtime-options t :purify t :toplevel #'run-main))
+  ;;(sb-ext:gc :full t)
+  (sb-ext:save-lisp-and-die path :executable t :save-runtime-options t :purify nil :toplevel #'run-main))
 
 (defun make-tmp-version (version) ;; construct a temporary version name (used while image dump, just to prevent current image damage)
   (format nil "tmp_~A" version))
@@ -584,9 +583,9 @@
   (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
       (format t "SWANK NOT DEAD!!1111~%"))
   (kill-all-threads)
-  (sb-ext:gc :full t)
+  ;;(sb-ext:gc :full t)
   (sb-ext:save-lisp-and-die (merge-pathnames (make-pathname :name "omgdaemon"))
-                            :executable t :save-runtime-options t :purify t :toplevel #'run-daemon))
+                            :executable t :save-runtime-options t :purify nil :toplevel #'run-daemon))
 
 (defun make-docker-image ()
   (with-input-from-string
