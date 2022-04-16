@@ -462,7 +462,8 @@
         (progn
           (setf (gethash id *dialog-wait-list*)
                 (remove-if (lambda (x) (equal (car x) 'dialog-id)) dat))
-          (signal-semaphore sem)))))
+          (signal-semaphore sem))))
+  nil)
 
 (defun-f close-current-dialog (&optional ev no-sem)
   (if (assoc :scroll-disabled *current-dialog*)
