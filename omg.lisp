@@ -35,11 +35,11 @@
 
 (defvar *root-path* "/") ;; must be started with "/"
 (defvar *html-path* "") ;; the path (relative to *root-path*) for simple html page with injcetced js
-(defvar *js-path* "/j")  ;; the path of js for injection (relative to *root-path*)
-(defvar *ws-path* "/s")  ;; websocket path (relative to *root-path*)
-(defvar *rpc-path* "/r") ;; rpc call path (relative to *root-path*)
-(defvar *gimme-path* "/g") ;; the path to query undefined symbols and functions (relative to *root-path*)
-(defvar *takit-path* "/t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
+(defvar *js-path* "j")  ;; the path of js for injection (relative to *root-path*)
+(defvar *ws-path* "s")  ;; websocket path (relative to *root-path*)
+(defvar *rpc-path* "r") ;; rpc call path (relative to *root-path*)
+(defvar *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
+(defvar *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
 (defvar *port* 7500) ;; default server port
 
 (defvar *use-wss* nil) ;; if T -- use wss:// protocol for websocket
@@ -251,7 +251,7 @@
                       (background-color "#ffffff")
                       icon-path)
   (setf *pwa-name* name)
-  (setf *pwa-sw-js-name* (format nil "~A/pwa-sw-~A.js" *root-path* (random-string 10)))
+  (setf *pwa-sw-js-name* (format nil "~A/pwa-sw-~A.js" (string-right-trim '(#\/) *root-path*) (random-string 10)))
   (setf *pwa-mainfest* (format nil "{
 \"name\":\"~A\",\"short_name\":\"~A\",\"display\":\"~A\",\"start_url\":\"~A/\",\"theme_color\":\"~A\",\"background_color\":\"~A\"~A}"
                          name short-name display *root-path* theme-color background-color
@@ -273,7 +273,7 @@
                                                  (let ((gif (skippy:load-data-stream path)))
                                                    (format nil "~Ax~A" (skippy:width gif) (skippy:height gif))))
                                                 (t (error (format nil "Unsupported icon format: ~A" typ))))))
-                               (setf *pwa-icon* (format nil "~A/~A/~A" *root-path* *pwa-path* (file-namestring path)))
+                               (setf *pwa-icon* (format nil "~A/~A/~A" (string-right-trim '(#\/) *root-path*) *pwa-path* (file-namestring path)))
                                (setf *pwa-icon-file* path)
                                (setf *pwa-icon-type* typ)
                                (format nil ",\"icons\"\: [{\"src\": \"~A\",\"sizes\": \"~A\",\"type\": \"~A\"}]"
@@ -290,7 +290,7 @@
                (if *pwa-mainfest*
                    (format nil "<meta name=\"viewpo\rt\" content=\"width=device-width, user-scalable=no\" />
 <link rel=\"manifest\" href=\"~A/~A/manifest.json\" />~A"
-                           *root-path* *pwa-path*
+                           (string-right-trim '(#\/) *root-path*) *pwa-path*
                            (if *pwa-icon*
                                (format nil "<link rel=\"icon\" href=\"~A\" type=\"~A\" />"
                                        *pwa-icon*
@@ -319,7 +319,7 @@ const omgHostPath=(omgURL.username?(omgURL.username+
                   omgURL.host+
                   omgPath
 const omgBase=omgURL.protocol+'//'+omgHostPath
-const omgWS='" (if (use-wss-p) "wss://" "ws://") "'+omgHostPath+'" *ws-path* "'
+const omgWS='" (if (use-wss-p) "wss://" "ws://") "'+omgHostPath+'" *root-path* *ws-path* "'
 
 jscl.packages['COMMON-LISP-USER'] = jscl.packages.CL;
 
@@ -341,7 +341,7 @@ jscl.internals.symbolValue=(symbol)=>{
       //console.log('SYMVALUE FETCH:', full_name)
       omgInFetch[full_name]=true
       let xhr=new XMLHttpRequest()
-      xhr.open('POST', omgBase+'" *gimme-path* "', false)
+      xhr.open('POST', omgBase+'" *root-path* *gimme-path* "', false)
       xhr.send(full_name)
       if (xhr.status === 200) {
         eval(xhr.response)
@@ -363,7 +363,7 @@ const omgFetchFvalue=(sym)=>{
     //console.log('FVALUE FETCH:',full_name)
     omgInFetch[full_name]=true
     let xhr=new XMLHttpRequest()
-    xhr.open('POST', omgBase+'" *gimme-path* "', false)
+    xhr.open('POST', omgBase+'" *root-path* *gimme-path* "', false)
     xhr.send(full_name)
     if (xhr.status === 200) {
       eval(xhr.response)
@@ -401,7 +401,7 @@ jscl.internals.intern=(name, package_name)=>{
 
 jscl.omgRPC=(cmd)=>{
   let xhr=new XMLHttpRequest()
-  xhr.open('POST', omgBase+'" *rpc-path* "', false)
+  xhr.open('POST', omgBase+'" *root-path* *rpc-path* "', false)
   xhr.send(cmd)
   if (xhr.status === 200) {
     return eval(xhr.response)
@@ -412,7 +412,7 @@ jscl.omgRPC=(cmd)=>{
 
 jscl.omgAsyncRPC=(cmd, cb)=>{
   let xhr=new XMLHttpRequest()
-  xhr.open('POST', omgBase+'" *rpc-path* "', true)
+  xhr.open('POST', omgBase+'" *root-path* *rpc-path* "', true)
   xhr.onload=function (e) {
     if (xhr.readyState === 4) {
       if (xhr.status === 200) {
@@ -449,7 +449,7 @@ jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue=(mv,name,lexenv,ns)=>{
       //console.log('LIL FETCH:',full_name,omgInFetch)
       omgInFetch[full_name]=true
       let xhr=new XMLHttpRequest()
-      xhr.open('POST', omgBase+'" *gimme-path* "', false)
+      xhr.open('POST', omgBase+'" *root-path* *gimme-path* "', false)
       xhr.send(full_name)
       if (xhr.status === 200) {
         eval(xhr.response)
@@ -470,7 +470,7 @@ jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
     const full_name=fn.car.package.packageName+':'+set_name
     omgInFetch[full_name]=true
     let xhr=new XMLHttpRequest()
-    xhr.open('POST', omgBase+'" *gimme-path* "', false)
+    xhr.open('POST', omgBase+'" *root-path* *gimme-path* "', false)
     xhr.send(full_name)
     if (xhr.status === 200) {
       eval(xhr.response)
