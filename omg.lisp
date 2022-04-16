@@ -33,13 +33,13 @@
 
 ;; Here are the paths for all HTTP(s) queries (the page reload required after change):
 
-(defvar *root-path* "") ;; must be started with "/"
+(defvar *root-path* "/") ;; must be started with "/"
 (defvar *html-path* "") ;; the path (relative to *root-path*) for simple html page with injcetced js
-(defvar *js-path* "j")  ;; the path of js for injection (relative to *root-path*)
-(defvar *ws-path* "s")  ;; websocket path (relative to *root-path*)
-(defvar *rpc-path* "r") ;; rpc call path (relative to *root-path*)
-(defvar *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
-(defvar *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
+(defvar *js-path* "/j")  ;; the path of js for injection (relative to *root-path*)
+(defvar *ws-path* "/s")  ;; websocket path (relative to *root-path*)
+(defvar *rpc-path* "/r") ;; rpc call path (relative to *root-path*)
+(defvar *gimme-path* "/g") ;; the path to query undefined symbols and functions (relative to *root-path*)
+(defvar *takit-path* "/t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
 (defvar *port* 7500) ;; default server port
 
 (defvar *use-wss* nil) ;; if T -- use wss:// protocol for websocket
@@ -298,7 +298,7 @@
                                ""))
                    "")
                "<script src='"
-               *root-path* "/" *js-path*
+               *root-path* *js-path*
                "' type='text/javascript'></script></head><body>"
                *extra-html*
                "</body></html>"))
@@ -319,7 +319,7 @@ const omgHostPath=(omgURL.username?(omgURL.username+
                   omgURL.host+
                   omgPath
 const omgBase=omgURL.protocol+'//'+omgHostPath
-const omgWS='" (if (use-wss-p) "wss://" "ws://") "'+omgHostPath+'" *root-path* "/" *ws-path* "'
+const omgWS='" (if (use-wss-p) "wss://" "ws://") "'+omgHostPath+'" *ws-path* "'
 
 jscl.packages['COMMON-LISP-USER'] = jscl.packages.CL;
 
@@ -341,7 +341,7 @@ jscl.internals.symbolValue=(symbol)=>{
       //console.log('SYMVALUE FETCH:', full_name)
       omgInFetch[full_name]=true
       let xhr=new XMLHttpRequest()
-      xhr.open('POST', omgBase+'" *root-path* "/" *gimme-path* "', false)
+      xhr.open('POST', omgBase+'" *gimme-path* "', false)
       xhr.send(full_name)
       if (xhr.status === 200) {
         eval(xhr.response)
@@ -363,7 +363,7 @@ const omgFetchFvalue=(sym)=>{
     //console.log('FVALUE FETCH:',full_name)
     omgInFetch[full_name]=true
     let xhr=new XMLHttpRequest()
-    xhr.open('POST', omgBase+'" *root-path* "/" *gimme-path* "', false)
+    xhr.open('POST', omgBase+'" *gimme-path* "', false)
     xhr.send(full_name)
     if (xhr.status === 200) {
       eval(xhr.response)
@@ -401,7 +401,7 @@ jscl.internals.intern=(name, package_name)=>{
 
 jscl.omgRPC=(cmd)=>{
   let xhr=new XMLHttpRequest()
-  xhr.open('POST', omgBase+'" *root-path* "/" *rpc-path* "', false)
+  xhr.open('POST', omgBase+'" *rpc-path* "', false)
   xhr.send(cmd)
   if (xhr.status === 200) {
     return eval(xhr.response)
@@ -412,7 +412,7 @@ jscl.omgRPC=(cmd)=>{
 
 jscl.omgAsyncRPC=(cmd, cb)=>{
   let xhr=new XMLHttpRequest()
-  xhr.open('POST', omgBase+'" *root-path* "/" *rpc-path* "', true)
+  xhr.open('POST', omgBase+'" *rpc-path* "', true)
   xhr.onload=function (e) {
     if (xhr.readyState === 4) {
       if (xhr.status === 200) {
@@ -449,7 +449,7 @@ jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue=(mv,name,lexenv,ns)=>{
       //console.log('LIL FETCH:',full_name,omgInFetch)
       omgInFetch[full_name]=true
       let xhr=new XMLHttpRequest()
-      xhr.open('POST', omgBase+'" *root-path* "/" *gimme-path* "', false)
+      xhr.open('POST', omgBase+'" *gimme-path* "', false)
       xhr.send(full_name)
       if (xhr.status === 200) {
         eval(xhr.response)
@@ -470,7 +470,7 @@ jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
     const full_name=fn.car.package.packageName+':'+set_name
     omgInFetch[full_name]=true
     let xhr=new XMLHttpRequest()
-    xhr.open('POST', omgBase+'" *root-path* "/" *gimme-path* "', false)
+    xhr.open('POST', omgBase+'" *gimme-path* "', false)
     xhr.send(full_name)
     if (xhr.status === 200) {
       eval(xhr.response)
@@ -689,7 +689,7 @@ const make_conn=()=>{
                        (symbol-package sym))))
         (setf (gethash-lock *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) sym))
         (setf (gethash-lock *current-res* *gimme-wait-list*)
-              (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* "/" *takit-path* "',false);"
+              (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
                                                "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
                                                "{throw new Error('Cannot fetch symbol (takit fails).');}")
                           (symbol-name *current-res*)
@@ -714,7 +714,7 @@ const make_conn=()=>{
            (mcod (compile-to-js `(write-to-string ,cmd) *package*)))
       (setf (gethash-lock *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) (caddr sem-tim-sym)))
       (setf (gethash-lock *current-res* *gimme-wait-list*)
-            (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* "/" *takit-path* "',false);"
+            (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
                                              "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
                                              "{throw new Error('Cannot fetch symbol (takit fails).');}")
                         (symbol-name *current-res*)
@@ -849,9 +849,10 @@ self.addEventListener('fetch', function(e) {
 (defvar *user-uri-handler* (lambda (env)
                              (declare (ignore env))
                              '(404 (:content-type "text/plain") ("File not found"))))
+
 (defun serv (env)
   (let ((uri (getf env :REQUEST-URI)))
-    (cond ((equal uri (concatenate 'string *root-path* "/" *pwa-path* "/manifest.json"))
+    (cond ((equal uri (concatenate 'string *root-path* *pwa-path* "/manifest.json"))
            (if *pwa-mainfest*
                `(200 (:content-type "application/json; charset=utf-8") (,*pwa-mainfest*))
                '(404 (:content-type "text/plain") ("File not found"))))
@@ -864,13 +865,13 @@ self.addEventListener('fetch', function(e) {
            `(200 (:content-type ,*pwa-icon-type*
                   :content-length ,(with-open-file (f *pwa-icon-file* :direction :input) (file-length f)))
                  ,*pwa-icon-file*))
-          ((equal uri (concatenate 'string *root-path* "/" *js-path*))
+          ((equal uri (concatenate 'string *root-path* *js-path*))
            `(200
                (:content-type "text/javascript; charset=utf-8")
                (,(get-main-js))))
-          ((equal uri (concatenate 'string *root-path* "/" *html-path*))
+          ((equal uri (concatenate 'string *root-path* *html-path*))
            `(200 (:content-type "text/html; charset=utf-8") (,(get-root-html))))
-          ((and (equal uri (concatenate 'string *root-path* "/" *rpc-path*))
+          ((and (equal uri (concatenate 'string *root-path* *rpc-path*))
                 (getf env :content-length))
            (let* ((cmd (read-from-string (get-str-from (getf env :raw-body) (getf env :content-length))))
                   (pkg (find-package (car cmd)))
@@ -880,18 +881,18 @@ self.addEventListener('fetch', function(e) {
               (if (gethash-lock op *rpc-functions*)
                 (rpc-wrapper op args pkg)
                `(404 (:content-type "text/plain; charset=utf-8") ("")))))
-          ((and (equal uri (concatenate 'string *root-path* "/" *gimme-path*))
+          ((and (equal uri (concatenate 'string *root-path* *gimme-path*))
                 (getf env :content-length))
            (let* ((str (get-str-from (getf env :raw-body) (getf env :content-length)))
                   (pos (position #\: str))
                   (pkg (find-package (subseq str 0 pos))))
              (gimme (intern (subseq str (+ 1 pos)) pkg))))
-          ((and (equal uri (concatenate 'string *root-path* "/" *takit-path*))
+          ((and (equal uri (concatenate 'string *root-path* *takit-path*))
                 (getf env :content-length))
            (let* ((str (get-str-from (getf env :raw-body) (getf env :content-length))))
              (takit (intern (subseq str 0 |sid-length|) :omg)
                     (subseq str |sid-length|))))
-          ((equal uri (concatenate 'string *root-path* "/" *ws-path*))
+          ((equal uri (concatenate 'string *root-path* *ws-path*))
            (let ((ws (make-ws env)))
              (lambda (responder)
                (declare (ignorable responder))
