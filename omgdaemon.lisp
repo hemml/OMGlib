@@ -77,6 +77,7 @@
 
 
 (defun run-main () ;; toplevel function, called after image startup. Waiting and executing commands from proxy
+  (setf omg::*giant-hash-lock* (bt:make-lock))
   (let* ((args (uiop:command-line-arguments))
          (fds (mapcar #'parse-integer args))
          (st-i (swank/backend:make-fd-stream (parse-integer (car args)) :UTF-8))  ;; I/O FDs are supplied as parameters
@@ -146,19 +147,24 @@
          (sleep 1)))
   (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
       (format t "SWANK NOT DEAD!!1111~%"))
-  (map nil
-    (lambda (conn)
-      (ignore-errors (close (swank::connection.socket-io conn))))
-    swank::*connections*)
-  (loop for i below 10 ;; Wait for swank shutdown
-    while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
-    do (progn
-         (format t "Waiting for swank shutdown. Please, close all connections!~%")
-         ;;;(swank:stop-server 4008)
-         (sleep 1)))
-  (kill-all-threads)
-  ;;(sb-ext:gc :full t)
-  (sb-ext:save-lisp-and-die path :executable t :save-runtime-options t :purify nil :toplevel #'run-main))
+  (let* ((ostream (make-string-output-stream :element-type 'extended-char))
+         (istream (make-string-input-stream ""))
+         (*standard-output* ostream)
+         (*error-output* ostream)
+         (*standard-input* istream))
+    (map nil
+      (lambda (conn)
+        (ignore-errors (close (swank::connection.socket-io conn))))
+      swank::*connections*)
+    (loop for i below 10 ;; Wait for swank shutdown
+      while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
+      do (progn
+           (format t "Waiting for swank shutdown. Please, close all connections!~%")
+           ;;;(swank:stop-server 4008)
+           (sleep 1)))
+    (kill-all-threads)
+    ;;(sb-ext:gc :full t)
+    (sb-ext:save-lisp-and-die path :executable t :save-runtime-options t :purify nil :toplevel #'run-main)))
 
 (defun make-tmp-version (version) ;; construct a temporary version name (used while image dump, just to prevent current image damage)
   (format nil "tmp_~A" version))
@@ -304,6 +310,8 @@
   (loop for i below timeout while (not (version-alive-p version))
     do (sleep 1)))
 
+(defparameter *swank-comm-style* :spawn)
+
 (defun run-version (version) ;; Start a version
   (if (get-version-info version)
       (format t "The version ~A is already alive!~%" version)
@@ -336,10 +344,12 @@
                                           (lambda ()
                                             (wait-for-version-startup version)
                                             (send-cmd-to version
-                                              '(progn
+                                              `(progn
                                                 (setf swank::*loopback-interface* "0.0.0.0")
                                                 (setf swank:*globally-redirect-io* t)
-                                                (swank:create-server :port 4008 :dont-close t)))
+                                                (bt:make-thread
+                                                  (lambda ()
+                                                    (swank:create-server :port 4008 :dont-close t :style ,*swank-comm-style*)))))
                                             (loop
                                               while (and (open-stream-p st-di)
                                                          (open-stream-p st-do))
@@ -555,8 +565,7 @@
 (defvar *proxy-port* 80)
 
 (defun run-daemon () ;; Toplevel function for daemon startup
-  (if (not omg::*giant-hash-lock*)
-      (setf omg::*giant-hash-lock* (bt:make-lock)))
+  (setf omg::*giant-hash-lock* (bt:make-lock))
   (let ((devel-path (version-file-path +devel-version+)))
     (if (not (probe-file devel-path)) ;; If this is a first start, dump development version image
         (let ((pid (posix-fork)))
@@ -568,13 +577,14 @@
     (ensure-version-working +devel-version+)
     (proxy *proxy-port*)))
 
-(defun make-omg-daemon (port) ;; Dump daemon image, specify proxy port
+(defun make-omg-daemon (port &key (swank-comm-style :spawn)) ;; Dump daemon image, specify proxy port
   (swank-loader:init
     :delete nil         ; delete any existing SWANK packages
     :reload nil         ; reload SWANK, even if the SWANK package already exists
     :load-contribs nil)
   (setf *proxy-port* port)
   (setf swank:*globally-redirect-io* t)
+  (setf *swank-comm-style* swank-comm-style)
   (loop for i below 20 ;; Wait for swank shutdown
     while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
     do (progn
