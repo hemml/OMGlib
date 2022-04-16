@@ -2,7 +2,9 @@
   (:use cl clack websocket-driver bordeaux-threads trivial-utf-8)
   (:import-from :event-emitter #:emit)
   (:export add-to-boot       ;; add a code to boot sequence
+           set-boot          ;; set boot code
            add-to-root-html  ;; add a text to html body
+           set-root-html     ;; set html body
            rm-from-boot      ;; remove a code from boot sequence
            start-server      ;; start a http(s)-server
            kill-server       ;; kill a http(s)-server
@@ -303,6 +305,9 @@
 
 (defun add-to-root-html (html)
   (setf *extra-html* (concatenate 'string *extra-html* html)))
+
+(defun set-root-html (html)
+  (setf *extra-html* html))
 
 (defun get-main-js ()
   "Return the JS code, including JSCL and OMG parts glued."
@@ -761,6 +766,9 @@ const make_conn=()=>{
 
 (defun add-to-boot (f)
   (push f *boot-functions*))
+
+(defun set-boot (f)
+  (setf *boot-functions* (list f)))
 
 (defun rm-from-boot (f)
   (delete f *boot-functions*))

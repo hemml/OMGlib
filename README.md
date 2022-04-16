@@ -360,6 +360,8 @@ Just after connection, the some boot code will be executed in browser. You can c
 
 - `(rm-from-boot code)` - remove code from boot sequence.
 
+- `(set-boot code)` - set a boot code with clearing all of the previous added code
+
 ### REMOTE-EXEC function
 
 You can use `(remote-exec cmd [nowait])` function to execute any CL code `cmd` in the browser. This function has optional argument `nowait` - set it to `T` if you are not needed to return value(s) and the function will return nil immediately.
@@ -372,6 +374,8 @@ The default HTML page returned for "/" just contains the main js script link, bu
  (add-to-root-html "<span id='loadBanner'>The page is loading, please wait...</span>")
  (add-to-boot '(remove-element (js-get-element-by-id "loadBanner")))
 ```
+
+Also you can use `(set-root-html str)` to set root html with clearing the old one.
 
 ### PWA mode
 
