@@ -364,7 +364,7 @@
 (defparameter-f *dialog-stack* nil)
 (defparameter-f *current-dialog* nil)
 
-(defun-f form-line (key txt &optional (cb (lambda (x) x)))
+(defun-f form-line (key txt &optional params)
   "Create modal dialog table line"
   (let* ((row (create-element "div" :|style.display| "table-row"
                                     :|style.width| "auto"))
@@ -379,12 +379,14 @@
                                    :|style.padding| "0.3em"
                                    :|style.width| "50%"
                                    :|style.verticalAlign| "bottom"))
-         (inp (create-element "input" :|type| "text"
+         (typ (getf params :type))
+         (inp (create-element "input" :|type| (if typ typ "text")
                                       :|style.font| "inherit"
                                       :|style.fontStyle| "italic"
                                       :|style.fontWeight| "lighter"
                                       :|style.width| "100%"))
-         (last-val ""))
+         (last-val "")
+         (cb (getf params :filter)))
     (let ((data (cdr (assoc :data *current-dialog*))))
       (if (not (assoc key data))
           (push (cons key "") (cdr (assoc :data *current-dialog*))))
@@ -393,7 +395,7 @@
                    (lambda ()
                      (let ((val (jscl::oget inp "value")))
                        (if (not (equal last-val val))
-                         (let ((new-val (funcall cb val)))
+                         (let ((new-val (if cb (funcall cb val) val)))
                            (setf last-val (if (stringp new-val) new-val val))
                            (if (stringp new-val)
                                (let ((selection-start (jscl::oget inp "selectionStart"))
@@ -450,7 +452,7 @@
           (append-element (form-button-row v) tbl)
           (if (listp v)
             (cond ((stringp (car v))
-                   (append-element (form-line k (car v) (cadr v)) tbl)))
+                   (append-element (form-line k (car v) (cdr v)) tbl)))
             (append-element (form-line k v) tbl))))
     tbl))
 

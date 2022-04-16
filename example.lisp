@@ -48,8 +48,9 @@
   (print
      (modal-dialog "The header"
                    "The modal dialog test"
-                   :lines (list :line1 (list "Upcase on backend:" #'up2)
-                                :line2 (list "Upcase on frontend:" #'up1)
+                   :lines (list :line1 (list "Upcase on backend:" :filter #'up2)
+                                :line2 (list "Upcase on frontend:" :filter #'up1)
+                                :pass (list "Upcase on frontend:" :type "password")
                                 :line3 "Enter something:"
                                 :buttons (list (list "OK" #'dialog-ok)
                                                (list "Cancel" #'close-current-dialog))))))
