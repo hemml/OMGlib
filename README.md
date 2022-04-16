@@ -377,6 +377,18 @@ The default HTML page returned for "/" just contains the main js script link, bu
 
 Also you can use `(set-root-html str)` to set root html with clearing the old one.
 
+### User URI handler
+
+If the library cannot serve http request it will respond with `404` error by default. You can redirect this requests to your function by setting `omg::*user-uri-handler*` variable:
+
+```
+(setf omg::*user-uri-handler*
+      (lambda (env)
+        (let ((uri (getf env :REQUEST-URI)))
+          `(200 (:content-type "text/plain")
+                (,(format nil "The ~A URI was requested." uri))))))
+```
+
 ### PWA mode
 
 The library can be used to create Progressive Web App (PWA), just by adding one single function call:

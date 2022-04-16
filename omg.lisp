@@ -846,6 +846,9 @@ self.addEventListener('fetch', function(e) {
 })
 ")
 
+(defvar *user-uri-handler* (lambda (env)
+                             (declare (ignore env))
+                             '(404 (:content-type "text/plain") ("File not found"))))
 (defun serv (env)
   (let ((uri (getf env :REQUEST-URI)))
     (cond ((equal uri (concatenate 'string *root-path* "/" *pwa-path* "/manifest.json"))
@@ -893,7 +896,7 @@ self.addEventListener('fetch', function(e) {
              (lambda (responder)
                (declare (ignorable responder))
                (start-connection ws))))
-          (t '(404 (:content-type "text/plain") ("File not found"))))))
+          (t (funcall *user-uri-handler* env)))))
 
 (defvar *serv* nil)
 
