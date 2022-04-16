@@ -526,7 +526,7 @@
       (setf (jscl::oget outer "style" "opacity") "100%")
       (get-element-id curtain))))
 
-(defun-r dialog-ok ()
+(defun-f dialog-ok ()
   (let* ((dat (get-dialog-data))
          (id (assoc 'dialog-id dat)))
     (if id
