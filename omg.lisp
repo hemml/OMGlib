@@ -22,7 +22,8 @@
            current-session-id  ;; get ID of current session (returns NIL if no session)
            set-debug-session  ;; mark current session as "debug"
            in-debug-session ;; execute code in debug session
-           make-pwa))       ;; serve web page as a Progressive Web App
+           make-pwa       ;; serve web page as a Progressive Web App
+           thread-in-session)) ;; spawn thread in current session
 
 (in-package :omg)
 
@@ -925,3 +926,9 @@ self.addEventListener('fetch', function(e) {
   (progn
     (kill-server)
     (apply #'start-server args)))
+
+(defmacro thread-in-session (&rest code)
+  `(bt:make-thread
+     (lambda ()
+       ,@code)
+     :initial-bindings (list (cons '*current-session* *current-session*))))

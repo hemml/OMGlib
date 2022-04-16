@@ -329,6 +329,14 @@ The library provides some other utility functions to work with sessions:
 - `(set-debug-session session)` - execute this function to mark specific _session_ as **debug**.
 - `(in-debug-session code)` - execute a code in the debug session. If there are no active debug session a warning will be printed and code will not executed.
 
+Sometimes you need to return from RPC function immediately to not block JS execution and do some work in background. In this case use `thread-in-session` macro:
+
+```
+(thread-in-session
+  ;; This code will be executed in a separate thread, but within current session
+)
+```
+
 To define global server-side variable, which value will be different for different sessions, use `def-session-var` macro:
 
 ```
