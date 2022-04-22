@@ -17,7 +17,7 @@
 (in-package :omgdaemon)
 
 (if (not (find-package :hunchentoot))
-    (ql:quickload :hunchentoot))
+    (require :hunchentoot))
 
 (defvar *main-st-i* nil) ;; Streams and lock for devel<->daemon communications
 (defvar *main-st-o* nil)
