@@ -163,6 +163,8 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(ensure-element el &rest body)` - macro, execute `body`, when element `el` become visible (will have non-zero dimensions)
 
+- `(on-element-remove el callback)` - execute `(callback el)` when element `el` is removed from page
+
 ### Creating SVG elements
 
 You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For exanple, the following code will return SVG-object with circle:

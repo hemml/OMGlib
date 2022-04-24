@@ -47,6 +47,7 @@
            make-js-object
            make-svg
            modal-dialog
+           on-element-remove
            page-width
            page-height
            parent-element
@@ -741,6 +742,32 @@
 
 (defparameter-f *notification-container* nil)
 
+(defun-f element-on-page-p (el)
+  (or (equal el (jscl::%js-vref "document"))
+      (and (not (jscl::js-null-p el))
+           (element-on-page-p (jscl::oget el "parentNode")))))
+
+(defparameter-f *global-observer-handlers* nil)
+
+(defun-f on-element-remove (el cb)
+  (if (not *global-observer-handlers*)
+      (let ((obs (jscl::make-new (winref "MutationObserver")
+                    (lambda (&rest args)
+                      (let ((rems nil))
+                        (map nil
+                          (lambda (eh)
+                            (if (not (element-on-page-p (car eh)))
+                                (if (not (funcall (cdr eh) (car eh)))
+                                    (push eh rems))))
+                          *global-observer-handlers*)
+                        (setf *global-observer-handlers*
+                              (remove-if
+                                (lambda (x) (position x rems :test #'equal))
+                                *global-observer-handlers*))
+                        nil)))))
+        ((jscl::oget obs "observe") (jscl::oget (jscl::%js-vref "document") "body") (make-js-object :|childList| t))))
+  (push (cons el cb) *global-observer-handlers*))
+
 (defun-f show-notification (header body &key period check)
   (let* ((frame (create-element "div" :|style.border| "1pt solid black"
                                       :|style.position| "relative"
@@ -788,18 +815,15 @@
     (append-element body-cont frame)
     (append-element frame ncont)
     (if period
-        (let* ((sobs nil) ;; JSCL bug workaround
-               (obs (jscl::make-new (winref "MutationObserver")
-                      (lambda (&rest args)
-                        (if (jscl::js-null-p (jscl::oget frame "parentNode"))
-                            (if (or (not check) (funcall check))
-                                (execute-after period
-                                  (lambda ()
-                                    (append-element frame ncont)))
-                                ((jscl::oget sobs "disconnect"))))
-                        nil))))
-          (setf sobs obs) ;; JSCL bug workaround
-          ((jscl::oget obs "observe") ncont (make-js-object :|childList| t))))))
+        (on-element-remove frame
+          (lambda (el)
+            (if (or (not check) (funcall check))
+                (progn
+                  (execute-after period
+                    (lambda ()
+                      (append-element frame ncont)))
+                  t)
+                nil))))))
 
 (defun-f find-widget (ev &optional type)
   (labels ((get-wg (el)
