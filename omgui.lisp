@@ -44,6 +44,7 @@
            load-js-script
            local-storage
            make-dialog
+           make-draggable-list
            make-js-function
            make-js-object
            make-svg
@@ -894,3 +895,123 @@
                 hnd))
           *global-event-handlers*)))
 
+(defun-f make-draggable-list (elements &key reorder-before reorder-after)
+  (let ((trans "all 0.5s linear")
+        (inner (create-element "div" :|style.position| "relative"))
+        (moving-el nil)
+        (moving-el-height nil)
+        (moving-el-num nil)
+        (old-y nil)
+        (cur-el-y nil)
+        (cur-top nil)
+        (max-top nil)
+        (last-shift nil)
+        (els-pos nil)
+        (element-stack nil))
+    (setf element-stack
+          (mapcar
+            (lambda (el)
+              (let* ((rec (create-element "div" :|style.position| "relative"
+                                                :|style.transition| trans
+                                                :|style.zIndex| 10
+                            :append-element el)))
+                (setf (jscl::oget rec "onmousedown")
+                      (lambda (ev)
+                        (if (equal (jscl::oget ev "button") 0)
+                            (progn
+                              (setf moving-el rec)
+                              (setf moving-el-num (position rec element-stack))
+                              (setf (jscl::oget rec "style" "scale") "101%")
+                              (setf (jscl::oget rec "style" "boxShadow") "0 0 1em 0.2em #909090")
+                              (setf (jscl::oget rec "style" "zIndex") 100)
+                              (setf old-y (jscl::oget ev "pageY"))
+                              (setf cur-el-y (jscl::oget rec "clientTop"))
+                              (setf cur-top (jscl::oget rec "offsetTop"))
+                              (setf max-top (- (jscl::oget inner "offsetHeight") (jscl::oget rec "offsetHeight")))
+                              (setf els-pos (mapcar
+                                              (lambda (el)
+                                                (let ((top (jscl::oget el "offsetTop")))
+                                                  (cons top (+ top (jscl::oget el "offsetHeight")))))
+                                              element-stack))
+                              (setf moving-el-height (jscl::oget rec "offsetHeight"))
+                              (map nil
+                                   (lambda (el) (setf (jscl::oget el "style" "transition") trans))
+                                   element-stack)
+                              (setf (jscl::oget rec "style" "transition") "all 0.1s linear")))))
+                (append-element rec inner)
+                rec))
+            elements))
+    (labels ((up-handler (ev)
+               (setf (jscl::oget moving-el "style" "top") 0)
+               (map nil
+                    (lambda (el)
+                      (if (not (equal el moving-el))
+                          (progn
+                            (setf (jscl::oget el "style" "transition") "none")
+                            (setf (jscl::oget el "style" "transform") "translateY(0)"))
+                          (setf (jscl::oget el "style" "transform")
+                                (format nil "translateY(~Apx)" (- cur-top (car (nth last-shift els-pos)))))))
+                    element-stack)
+               (let ((el moving-el))
+                 (execute-after 0.1
+                   (lambda ()
+                     (setf (jscl::oget el "style" "scale") "100%")
+                     (setf (jscl::oget el "style" "boxShadow") "0 0 0")
+                     (setf (jscl::oget el "style" "zIndex") 10)
+                     (setf (jscl::oget el "style" "transform") "translateY(0)"))))
+               (if (not (equal moving-el-num last-shift))
+                   (progn
+                     (remove-element moving-el)
+                     (if (> last-shift moving-el-num)
+                         (if (not (equal last-shift (- (length element-stack) 1)))
+                             ((jscl::oget inner "insertBefore") moving-el (nth (+ last-shift 1) element-stack))
+                             (append-element moving-el inner))
+                         ((jscl::oget inner "insertBefore") moving-el (nth last-shift element-stack)))
+                     (if (> last-shift moving-el-num)
+                         (setf element-stack `(,@(subseq element-stack 0 moving-el-num)
+                                               ,@(subseq element-stack (+ 1 moving-el-num) (+ last-shift 1))
+                                               ,moving-el
+                                               ,@(subseq element-stack (+ last-shift 1))))
+                         (setf element-stack `(,@(subseq element-stack 0 last-shift)
+                                               ,moving-el
+                                               ,@(subseq element-stack last-shift moving-el-num)
+                                               ,@(subseq element-stack (+ 1 moving-el-num)))))))
+               (setf moving-el nil)
+               (setf last-shift nil))
+             (move-handler (ev)
+               (if moving-el
+                   (let* ((y1 (jscl::oget ev "pageY"))
+                          (dy (min (- max-top cur-top) (max (* -1 cur-top) (- y1 old-y)))))
+                     (setf cur-el-y (+ dy cur-el-y))
+                     (setf cur-top (+ dy cur-top))
+                     (setf (jscl::oget moving-el "style" "top")
+                           (format nil "~Apx" cur-el-y))
+                     (setf old-y y1)
+                     ((jscl::oget (funcall (winref "getSelection")) "empty"))
+                     ((jscl::oget ev "stopPropagation"))
+                     (let* ((mid (+ cur-top (* 0.5 moving-el-height)))
+                            (pos (position-if
+                                   (lambda (el)
+                                       (and (> mid (car el))
+                                            (< mid (cdr el))))
+                                   els-pos)))
+                       (if (and pos (not (equal pos last-shift)))
+                           (progn
+                             (setf last-shift pos)
+                             (loop for i from 0 to (- (length element-stack) 1) do
+                               (setf (jscl::oget (nth i element-stack) "style" "transform")
+                                     (progn
+                                       (format nil "translateY(~Apx)"
+                                                   (cond ((and (>= i pos) (< i moving-el-num))
+                                                          moving-el-height)
+                                                         ((and (<= i pos) (> i moving-el-num))
+                                                          (- moving-el-height))
+                                                         (t 0)))))))))
+                     nil))))
+      (add-event-handler "document.onmouseup" #'up-handler)
+      (add-event-handler "document.onmousemove" #'move-handler)
+      (on-element-remove inner
+        (lambda (el)
+          (rm-event-handler "document.onmouseup" #'up-handler)
+          (rm-event-handler "document.onmousemove" #'move-handler))))
+    inner))
