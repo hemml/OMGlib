@@ -1,6 +1,7 @@
 (defpackage :omgui
   (:use cl omg jscl bordeaux-threads omgdaemon)
-  (:export add-style
+  (:export add-event-handler
+           add-style
            add-youtube-player
            append-element
            async-bind
@@ -54,6 +55,7 @@
            prevent-page-close
            register-hash-cb
            remove-element
+           rm-event-handler
            show-notification
            visible-width
            visible-height
@@ -862,3 +864,33 @@
                     (progn ,@body)
                     (execute-after 0.1 #',fn))))
        (,fn))))
+
+(defparameter-f *global-event-handlers* nil)
+
+(defun-f add-event-handler (path handler)
+  (let ((handlers (assoc path *global-event-handlers*  :test #'equal)))
+    (if (not handlers)
+        (let* ((path-l (omgui::js-string-split path #\.))
+               (obj (omgui::deep-oget-1 (jscl::%js-vref "window") (butlast path-l))))
+          (setf (jscl::oget obj (car (last path-l)))
+                (lambda (ev)
+                  (map nil
+                    (lambda (cb) (funcall cb ev))
+                    (cdr (assoc path *global-event-handlers* :test #'equal)))))
+          (push (cons path (list handler)) *global-event-handlers*))
+        (push handler (cdr handlers)))))
+
+(defun-f rm-event-handler (path handler)
+  (setf *global-event-handlers*
+        (mapcar
+          (lambda (hnd)
+            (if (equal path (car hnd))
+                (cons path
+                      (remove-if
+                        (lambda (h)
+                          (jslog h handler (equal h handler))
+                          (equal h handler))
+                        (cdr hnd)))
+                hnd))
+          *global-event-handlers*)))
+
