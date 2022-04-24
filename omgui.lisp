@@ -16,6 +16,7 @@
            element-height
            enable-back-button
            enable-scroll
+           ensure-element
            ensure-last-version
            execute-after
            find-widget
@@ -826,3 +827,11 @@
         (setf (jscl::oget (jscl::%js-vref "document") "cookie")
               (format nil "~A=~A" (get-omg-cookie-name) (get-last-version)))
         ((jscl::oget (jscl::%js-vref "location") "reload") t))))
+
+(defmacro-f ensure-element (e &rest body)
+  (let ((fn (gensym2)))
+    `(labels ((,fn ()
+                (if (> (jscl::oget ,e "clientWidth") 0)
+                    (progn ,@body)
+                    (execute-after 0.1 #',fn))))
+       (,fn))))

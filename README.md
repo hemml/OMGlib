@@ -161,6 +161,8 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(find-widget ev &optional name)` - the function can be used to get a DOM element of the widget, which received an event `ev`. See `(show-notification)` example.
 
+- `(ensure-element el &rest body)` - macro, execute `body`, when element `el` become visible (will have non-zero dimensions)
+
 ### Creating SVG elements
 
 You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For exanple, the following code will return SVG-object with circle:
