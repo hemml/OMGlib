@@ -321,7 +321,8 @@
                         :|style.position| "absolute"
                         :|style.top| "0"
                         :|style.left| "0"
-                        :|class| "blurbg"))
+                        :|class| "blurbg"
+                        :|zIndex| 100000))
 
 (defun-f dialog-frame ()
   "Create a modal dialog outer frame"
@@ -336,7 +337,8 @@
                         :|style.font| (system-font)
                         :|style.boxShadow| "0.5em 0.5em 1em gray"
                         :|style.position| "absolute"
-                        :|omgwidget| "dialog"))
+                        :|omgwidget| "dialog"
+                        :|zIndex| 200000))
 
 (defun-f dialog-header (header)
   "Create a modal dialog header"
