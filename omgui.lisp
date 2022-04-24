@@ -365,7 +365,6 @@
   (funcall (jscl::%js-vref "setTimeout") cb (* tim 1000.0)))
 
 (defparameter-f *dialog-stack* nil)
-(defparameter-f *current-dialog* nil)
 
 (defun-f form-line (key txt &optional params)
   "Create modal dialog table line"
@@ -389,31 +388,33 @@
                                       :|style.fontWeight| "lighter"
                                       :|style.width| "100%"))
          (last-val "")
-         (cb (getf params :filter)))
-    (let ((data (cdr (assoc :data *current-dialog*))))
-      (if (not (assoc key data))
-          (push (cons key "") (cdr (assoc :data *current-dialog*))))
-      (labels ((tcb (ev) ;; the callback is called after every field update
-                 (execute-after 0
-                   (lambda ()
-                     (let ((val (jscl::oget inp "value")))
-                       (if (not (equal last-val val))
-                         (let ((new-val (if cb (funcall cb val) val)))
-                           (setf last-val (if (stringp new-val) new-val val))
-                           (if (stringp new-val)
-                               (let ((selection-start (jscl::oget inp "selectionStart"))
-                                     (selection-end (jscl::oget inp "selectionEnd")))
-                                 (setf (jscl::oget inp "value") new-val)
-                                 (setf (cdr (assoc key (cdr (assoc :data *current-dialog*)))) new-val)
-                                 ((jscl::oget inp "setSelectionRange")
-                                  selection-start
-                                  selection-end))))))))
-                 t))
-        (setf (jscl::oget inp "onchange") #'tcb)
-        (setf (jscl::oget inp "onkeyup") #'tcb)
-        (setf (jscl::oget inp "onkeydown") #'tcb)
-        (setf (jscl::oget inp "onpaste") #'tcb)
-        (setf (jscl::oget inp "ondrop") #'tcb)))
+         (cb (getf params :filter))
+         (current-dialog (car *dialog-stack*))
+         (data (cdr (assoc :data current-dialog))))
+    (if (not (assoc key data))
+        (push (cons key "") data))
+    (labels ((tcb (ev) ;; the callback is called after every field update
+               (execute-after 0
+                 (lambda ()
+                   (let ((val (jscl::oget inp "value")))
+                     (if (not (equal last-val val))
+                       (let ((new-val (if cb (funcall cb val) val)))
+                         (setf last-val (if (stringp new-val) new-val val))
+                         (if (stringp new-val)
+                             (let ((selection-start (jscl::oget inp "selectionStart"))
+                                   (selection-end (jscl::oget inp "selectionEnd")))
+                               (setf (jscl::oget inp "value") new-val)
+                               (setf (cdr (assoc key data)) new-val)
+                               (setf (cdr (assoc :data current-dialog)) data) ;; JSCL bug workaround
+                               ((jscl::oget inp "setSelectionRange")
+                                selection-start
+                                selection-end))))))))
+               t))
+      (setf (jscl::oget inp "onchange") #'tcb)
+      (setf (jscl::oget inp "onkeyup") #'tcb)
+      (setf (jscl::oget inp "onkeydown") #'tcb)
+      (setf (jscl::oget inp "onpaste") #'tcb)
+      (setf (jscl::oget inp "ondrop") #'tcb))
     (append-element inp c2)
     (append-element c1 row)
     (append-element c2 row)
@@ -471,34 +472,33 @@
   nil)
 
 (defun-f close-current-dialog (&optional ev no-sem)
-  (if (assoc :scroll-disabled *current-dialog*)
-      (enable-scroll))
-  (let* ((outer (cdr (assoc :outer *current-dialog*)))
-         (curtain (cdr (assoc :curtain *current-dialog*)))
-         (dat (get-dialog-data))
-         (id (assoc 'dialog-id dat)))
-    (if outer
-        (remove-element outer))
-    (if curtain
-        (remove-element curtain))
-    (if (and (cdr id) (not no-sem))
-        (dialog-wl-send (cdr id) nil)))
-  (setf *current-dialog* (pop *dialog-stack*)))
+  (let ((current-dialog (pop *dialog-stack*)))
+    (if (assoc :scroll-disabled current-dialog)
+        (enable-scroll))
+    (let* ((outer (cdr (assoc :outer current-dialog)))
+           (curtain (cdr (assoc :curtain current-dialog)))
+           (dat (cdr (assoc :data current-dialog)))
+           (id (assoc 'dialog-id dat)))
+      (if outer
+          (remove-element outer))
+      (if curtain
+          (remove-element curtain))
+      (if (and (cdr id) (not no-sem))
+          (dialog-wl-send (cdr id) nil)))))
 
 (defun-f get-dialog-data ()
-  (cdr (assoc :data *current-dialog*)))
+  (cdr (assoc :data (car *dialog-stack*))))
 
 (defun-f make-dialog (header-text dialog-text &key lines id)
   "Create modal dialog with header, text and lines. "
   (let* ((curtain (curtain))
          (outer (dialog-frame)))
-    (if *current-dialog*
-        (push *current-dialog* *dialog-stack*))
-    (setf *current-dialog*
-          (list (cons :scroll-disabled (disable-scroll))
-                (cons :curtain curtain)
-                (cons :outer outer)
-                (cons :data (list (cons 'dialog-id id)))))
+    (setf *dialog-stack*
+          (cons (list (cons :scroll-disabled (disable-scroll))
+                      (cons :curtain curtain)
+                      (cons :outer outer)
+                      (cons :data (list (cons 'dialog-id id))))
+                *dialog-stack*))
     (let* ((hdr (dialog-header header-text))
            (tbl (dialog-table lines))
            (txt (create-element "div" :|innerHTML| dialog-text
@@ -533,11 +533,12 @@
       (get-element-id curtain))))
 
 (defun-f dialog-ok ()
-  (let* ((dat (get-dialog-data))
+  (let* ((current-dialog (car *dialog-stack*))
+         (dat (cdr (assoc :data current-dialog)))
          (id (assoc 'dialog-id dat)))
+    (close-current-dialog nil t)
     (if id
-        (dialog-wl-send (cdr id) dat))
-    (close-current-dialog nil t)))
+        (dialog-wl-send (cdr id) dat))))
 
 (defmacro modal-dialog (&rest args)
   `(if (current-session-id)
