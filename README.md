@@ -523,7 +523,7 @@ The most convinient way to run `omgdaemon` is to put it into a docker container.
 sbcl --eval "(require :omg)" --eval "(omgdaemon::make-docker-image)" --quit
 ```
 
-The image can be started in the following way to serve on port `7575` on `localhost`:
+`(omgdaemon::make-docker-image)` accepts an optional parameter - tag name for the new image. The image can be started in the following way to serve on port `7575` on `localhost`:
 
 ```
 docker run -d -p 127.0.0.1:7575:8080 -p 127.0.0.1:4008:4008 omgdaemon

@@ -597,7 +597,7 @@
   (sb-ext:save-lisp-and-die (merge-pathnames (make-pathname :name "omgdaemon"))
                             :executable t :save-runtime-options t :purify nil :toplevel #'run-daemon))
 
-(defun make-docker-image ()
+(defun make-docker-image (&optional tag)
   (with-input-from-string
     (fd (format nil "~{~A~%~}"
           `("FROM debian"
@@ -609,7 +609,7 @@
             "RUN su -l omg -c 'cd /home/omg && sbcl --eval \"(load \\\"/home/omg/quicklisp/setup.lisp\\\")\" --eval \"(ql:quickload :hunchentoot)\" --eval \"(ql:quickload :omg)\" --eval \"(omgdaemon:make-omg-daemon 8080)\" --disable-debugger'"
             "EXPOSE 8080 4008"
             "CMD while true; do su -l omg -c 'cd /home/omg && ./omgdaemon' ; sleep 1 ; done")))
-    (run '(docker build :tag omgdaemon :pull :no-cache -) :input fd)))
+    (run `(docker build :tag ,(if tag tag 'omgdaemon) :pull :no-cache -) :input fd)))
 
 (defun update-omg ()
   (run '(and (cd "/home/omg/quicklisp/local-projects/OMGlib")
