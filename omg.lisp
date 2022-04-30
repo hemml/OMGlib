@@ -49,6 +49,8 @@
 
 (defvar *giant-hash-lock* nil) ;; A giant lock to make hashes thread safe
 
+(defvar *omg-thread-list* nil)
+
 (defun gethash-lock (key hash)
   (if *giant-hash-lock*
       (bt:with-lock-held (*giant-hash-lock*)
@@ -534,6 +536,8 @@ const make_conn=()=>{
            :reader socket)
    (ses-id :initform (random-symbol |sid-length|)
            :reader get-id)
+   (last-active :initform (get-universal-time)
+                :reader last-active)
    (wait-list :initform (make-hash-table)
               :reader wait-list))
   (:documentation
@@ -614,8 +618,10 @@ const make_conn=()=>{
                   (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(\"" rcode "\"))")
                   (concatenate 'string "jscl.evaluateString(\"" rcode "\")"))))
      (if reskey
-         (let ((sem (car (gethash-lock reskey *gimme-wait-list*))))
-           (setf (gethash-lock reskey *gimme-wait-list*) res)
+         (let* ((gwl (gethash-lock reskey *gimme-wait-list*))
+                (sem (cdr (assoc :sem gwl)))
+                (time (cdr (assoc :time gwl))))
+           (setf (gethash-lock reskey *gimme-wait-list*) `((:result . ,res) (:time . ,time)))
            (signal-semaphore sem)))
      res))
 
@@ -625,13 +631,13 @@ const make_conn=()=>{
     (if sem-dat-sym
       (let ((newsem (make-semaphore)))
         (setf (gethash-lock key *takit-wait-list*)
-              (let ((*package* (symbol-package (caddr sem-dat-sym)))
+              (let ((*package* (symbol-package (cdr (assoc :symbol sem-dat-sym))))
                     (*read-eval* nil))
                 (read-from-string res)))
-        (setf (gethash-lock key *gimme-wait-list*) (list newsem (get-universal-time) (caddr sem-dat-sym)))
-        (signal-semaphore (car sem-dat-sym))
+        (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,newsem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-dat-sym)))
+        (signal-semaphore (cdr (assoc :sem sem-dat-sym)))
         (wait-on-semaphore newsem)
-        `(200 (:content-type "text/plain; charset=utf-8") (,(gethash-lock key *gimme-wait-list*))))
+        `(200 (:content-type "text/plain; charset=utf-8") (,(cdr (assoc :result (gethash-lock key *gimme-wait-list*))))))
       `(404 (:content-type "text/plain; charset=utf-8") ("")))))
 
 (defun gimme (sym)
@@ -647,14 +653,16 @@ const make_conn=()=>{
                        datp))
               (sem (make-semaphore))
               (key (random-key *gimme-wait-list* |sid-length|)))
-          (setf (gethash-lock key *gimme-wait-list*) (list sem (get-universal-time) sym))
-          (bt:make-thread
-             (lambda ()
-               (compile-to-js dat (symbol-package sym) key))
-             :initial-bindings `((*current-res* . ',key)))
+          (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
+          (push (bt:make-thread
+                   (lambda ()
+                     (compile-to-js dat (symbol-package sym) key))
+                   :initial-bindings `((*current-res* . ',key)))
+                *omg-thread-list*)
           (wait-on-semaphore sem)
-          (let ((res (gethash-lock key *gimme-wait-list*)))
+          (let ((res (cdr (assoc :result (gethash-lock key *gimme-wait-list*)))))
              (remhash key *gimme-wait-list*)
+             (unintern key)
             `(200 (:content-type "text/plain; charset=utf-8") (,res))))
        `(404 (:content-type "text/plain; charset=utf-8") ("")))))
 
@@ -662,20 +670,21 @@ const make_conn=()=>{
   "The wrapper for RPC requests, used to allow call browser-side functions from RPC funcs."
    (let* ((sem (make-semaphore))
           (key (random-key *gimme-wait-list* |sid-length|)))
-      (setf (gethash-lock key *gimme-wait-list*) (list sem (get-universal-time) (intern "omg-rpc-symbol" pkg)))
-      (bt:make-thread
-         (lambda ()
-           (compile-to-js `(read-from-string ,(write-to-string (apply op args)))
-                          pkg
-                          key))
-         :initial-bindings `((*current-res* . ',key)
-                             (*current-session* . ,*current-session*)
-                             (*in-rpc* . t)))
+      (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,(intern "omg-rpc-symbol" pkg))))
+      (push (bt:make-thread
+              (lambda ()
+                (compile-to-js `(read-from-string ,(write-to-string (apply op args)))
+                               pkg
+                               key))
+              :initial-bindings `((*current-res* . ',key)
+                                  (*current-session* . ,*current-session*)
+                                  (*in-rpc* . t)))
+            *omg-thread-list*)
       (wait-on-semaphore sem)
-      (let ((res (gethash-lock key *gimme-wait-list*)))
+      (let ((res (cdr (assoc :result (gethash-lock key *gimme-wait-list*)))))
          (remhash key *gimme-wait-list*)
+         (unintern key)
         `(200 (:content-type "text/plain; charset=utf-8") (,res)))))
-
 
 (defun exec-remote-macro (name args)
   "Execute in a browser a code of the macro with the specific name and argments.
@@ -683,23 +692,25 @@ const make_conn=()=>{
    browser-side, because all side-effects, produced by macros, must have a place in the browser."
   (if *current-res*
       (let* ((sem-tim-sym (gethash-lock *current-res* *gimme-wait-list*))
-             (sem (car sem-tim-sym))
-             (sym (caddr sem-tim-sym))
+             (sem (cdr (assoc :sem sem-tim-sym)))
+             (sym (cdr (assoc :symbol sem-tim-sym)))
              (takit-sem (make-semaphore))
              (mcod (compile-to-js
                       `(write-to-string (apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))
                        (symbol-package sym))))
-        (setf (gethash-lock *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) sym))
+        (setf (gethash-lock *current-res* *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
         (setf (gethash-lock *current-res* *gimme-wait-list*)
-              (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
-                                               "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
-                                               "{throw new Error('Cannot fetch symbol (takit fails).');}")
-                          (symbol-name *current-res*)
-                          mcod))
+              `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
+                                                             "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
+                                                             "{throw new Error('Cannot fetch symbol (takit fails).');}")
+                                        (symbol-name *current-res*)
+                                        mcod))
+                (assoc :time sem-tim-sym)))
         (signal-semaphore sem)
         (wait-on-semaphore takit-sem)
-        (let ((macro-res (gethash-lock *current-res* *takit-wait-list*)))
+        (let ((macro-res (cdr (assoc :result (gethash-lock *current-res* *takit-wait-list*)))))
           (remhash *current-res* *takit-wait-list*)
+          (unintern *current-res*)
           macro-res))
       (remote-exec `(apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))))
 
@@ -711,20 +722,22 @@ const make_conn=()=>{
    result from the remote side."
   (if *in-rpc*
     (let* ((sem-tim-sym (gethash-lock *current-res* *gimme-wait-list*))
-           (sem (car sem-tim-sym))
+           (sem (cdr (assoc :sem sem-tim-sym)))
            (takit-sem (make-semaphore))
            (mcod (compile-to-js `(write-to-string ,cmd) *package*)))
-      (setf (gethash-lock *current-res* *takit-wait-list*) (list takit-sem (get-universal-time) (caddr sem-tim-sym)))
+      (setf (gethash-lock *current-res* *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-tim-sym)))
       (setf (gethash-lock *current-res* *gimme-wait-list*)
-            (format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
-                                             "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
-                                             "{throw new Error('Cannot fetch symbol (takit fails).');}")
-                        (symbol-name *current-res*)
-                        mcod))
+            `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
+                                                           "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
+                                                           "{throw new Error('Cannot fetch symbol (takit fails).');}")
+                                      (symbol-name *current-res*)
+                                      mcod))
+              ,(assoc :time sem-tim-sym)))
       (signal-semaphore sem)
       (wait-on-semaphore takit-sem)
-      (let ((res (gethash-lock *current-res* *takit-wait-list*)))
+      (let ((res (cdr (assoc :result (gethash-lock *current-res* *takit-wait-list*)))))
         (remhash *current-res* *takit-wait-list*)
+        (unintern *current-res*)
         res))
     (flet ((exec () (let* ((wlist (wait-list *current-session*))
                            (sock (socket *current-session*))
@@ -748,6 +761,7 @@ const make_conn=()=>{
                        (progn
                          (if (not nowait) (setf (gethash-lock key wlist) `(,(current-thread) ,sem nil)))
                          (send-text sock jscmd)
+                         (setf (slot-value *current-session* 'last-active) (get-universal-time))
                          (if (not nowait)
                              (progn
                                (wait-on-semaphore sem)
@@ -778,6 +792,7 @@ const make_conn=()=>{
 (defun boot-f ()
   "The boot code, will be executed on the browser-side just after the socket is connected."
   (remote-exec `(defparameter *session-id* ',(get-id *current-session*)) :nowait)
+  (setf (slot-value *current-session* 'last-active) (get-universal-time))
   (map nil (lambda (f) (remote-exec f :nowait)) *boot-functions*))
 
 (defun make-ws (env)
@@ -788,12 +803,14 @@ const make_conn=()=>{
     (setf (gethash-lock sid *session-list*) ses)
     (on :open ws
       (lambda ()
-          (bt:make-thread
-            (lambda ()
-              (let ((*current-session* ses)
-                    (*package* (find-package :omg)))
-                (boot-f)))
-            :name (concatenate 'string (symbol-name sid) "-BOOT"))))
+        (push (bt:make-thread
+                (lambda ()
+                  (let ((*current-session* ses)
+                        (*package* (find-package :omg)))
+                    (setf (slot-value *current-session* 'last-active) (get-universal-time))
+                    (boot-f)))
+                :name (concatenate 'string (symbol-name sid) "-BOOT"))
+              *omg-thread-list*)))
     (on :error ws
       (lambda (error)
         (format t "WS error: ~S~%" error)))
@@ -802,13 +819,14 @@ const make_conn=()=>{
         (let* ((m (subseq msg 0 1))
                (rid (intern (subseq msg 1 (+ |sid-length| 1)) :omg))
                (val (subseq msg (+ |sid-length| 1))))
-              (cond ((equal m "~")
-                     (let* ((wlist (wait-list ses))
-                            (trsem (gethash-lock rid wlist)))
-                      (if trsem
-                         (progn
-                           (setf (gethash-lock rid wlist) (list (car trsem) (cadr trsem) val))
-                           (signal-semaphore (cadr trsem))))))))))
+          (setf (slot-value ses 'last-active) (get-universal-time))
+          (cond ((equal m "~")
+                 (let* ((wlist (wait-list ses))
+                        (trsem (gethash-lock rid wlist)))
+                  (if trsem
+                     (progn
+                       (setf (gethash-lock rid wlist) (list (car trsem) (cadr trsem) val))
+                       (signal-semaphore (cadr trsem))))))))))
     (on :close ws
        (lambda (&key code reason)
         (format t "WS closed (~a ~a)~%" code reason)
@@ -880,6 +898,7 @@ self.addEventListener('fetch', function(e) {
                   (op (intern (symbol-name (cadr cmd)) pkg))
                   (args (caddr cmd))
                   (*current-session* (find-session (intern (symbol-name (cadddr cmd)) :omg))))
+              (setf (slot-value *current-session* 'last-active) (get-universal-time))
               (if (gethash-lock op *rpc-functions*)
                 (rpc-wrapper op args pkg)
                `(404 (:content-type "text/plain; charset=utf-8") ("")))))
@@ -905,22 +924,56 @@ self.addEventListener('fetch', function(e) {
 
 (defvar *last-args* nil)
 
+(defparameter *wl-timeout* 600)
+(defparameter *session-timeout* (* 60 60 24))
+
 (defun start-server (&rest args)
   (if args (setf *last-args* args))
   (start-multiprocessing) ;; bordeaux-threads requirement
   (if (not *giant-hash-lock*)
       (setf *giant-hash-lock* (bt:make-lock)))
-
   (setf *serv* (apply #'clack:clackup
                       `(,#'serv
                         :port ,*port*
                         :ssl ,(has-ssl-p)
                         :ssl-key-file ,*ssl-key*
                         :ssl-cert-file ,*ssl-cert*
-                        ,@*last-args*))))
+                        ,@*last-args*)))
+  (push (bt:make-thread
+          (lambda ()
+            (loop do
+              (let ((tim (get-universal-time)))
+                (labels ((clwl (h)
+                           (map nil
+                             (lambda (x)
+                               (let ((t1 (cdr (assoc :time (gethash-lock x h)))))
+                                 (if (and t1 (> (- tim t1) *wl-timeout*))
+                                     (progn
+                                       (remhash x h)
+                                       (unintern x)))))
+                             (loop for k being each hash-key of h collect k))))
+                  (map nil #'clwl (list *gimme-wait-list* *takit-wait-list*))
+                  (map nil
+                    (lambda (k)
+                      (let ((ses (gethash-lock k *session-list*)))
+                        (if (not (equal (ready-state (socket ses)) :open))
+                            (if (> (- tim (last-active ses)) *session-timeout*)
+                                (progn
+                                  (remhash k *session-list*)
+                                  (unintern k)))
+                            (setf (slot-value ses 'last-active) tim))))
+                    (loop for k being each hash-key of *session-list* collect k))
+                  (map nil
+                    (lambda (thr)
+                      (delete thr *omg-thread-list*))
+                    (remove-if #'bt:thread-alive-p *omg-thread-list*)))
+                (sleep 60)))))
+        *omg-thread-list*))
 
 (defun kill-server ()
   (map nil #'clrhash (list *gimme-wait-list* *takit-wait-list* *session-list*))
+  (map nil #'bt:destroy-thread (remove-if-not #'bt:thread-alive-p *omg-thread-list*))
+  (setf *omg-thread-list* nil)
   (if *serv* (clack::stop *serv*)))
 
 (defun restart-server (&rest args)
@@ -929,7 +982,8 @@ self.addEventListener('fetch', function(e) {
     (apply #'start-server args)))
 
 (defmacro thread-in-session (&rest code)
-  `(bt:make-thread
-     (lambda ()
-       ,@code)
-     :initial-bindings (list (cons '*current-session* *current-session*))))
+  `(push (bt:make-thread
+           (lambda ()
+             ,@code)
+           :initial-bindings (list (cons '*current-session* *current-session*)))
+         *omg-thread-list*))
