@@ -110,7 +110,7 @@
                           (setf *server-set-list* nil))))))))))
     (loop while (and (open-stream-p st-i) (open-stream-p st-o)) do
       (let* ((cmd (ignore-errors (read st-i nil eofv)))
-             (res (if (not (equal cmd eofv)) (get-cmd-res (eval cmd)))))
+             (res (if (not (equal cmd eofv)) (get-cmd-res cmd))))
         (format st-o "~A~%" res)
         (force-output st-o)))))
 
@@ -355,7 +355,7 @@
                                                          (open-stream-p st-do))
                                               do (let* ((eofv (gensym))
                                                         (cmd (ignore-errors (read st-di nil eofv)))
-                                                        (res (if (not (equal cmd eofv)) (get-cmd-res (eval cmd)))))
+                                                        (res (if (not (equal cmd eofv)) (get-cmd-res cmd))))
                                                    (format st-do "~A~%" res)
                                                    (force-output st-do))))
                                           :name "devel processing"))))
