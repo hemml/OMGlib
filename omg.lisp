@@ -214,7 +214,8 @@
                        (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
                           `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
                  (if (not (assoc (function ,name) *exported-function-names*))
-                     (setf *exported-function-names* (cons (cons (function ,name) ',name) *exported-function-names*))))))))) ;; It is strange, but PUSH causes error here!
+                     (setf *exported-function-names* (cons (cons (function ,name) ',name) *exported-function-names*))) ;; It is strange, but PUSH causes error here!
+                 #',name))))))
 
 (defmacro make-var-macro-f (op)
   "A macro for variables-parameters-constants definitions"
