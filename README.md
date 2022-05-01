@@ -362,8 +362,6 @@ To define global server-side variable, which value will be different for differe
 
 The macro will create a symbol-macro with name `*search-in-progress*` and a hash table to store values for each session. Now you can use `*search-in-progress*` as a normal setf-able variable.
 
-**WARNING:** use init value with caution! Value, passed as a third (optional) parameter of `def-session-var` will be evaluated with every access to the variable!
-
 ### Boot functions
 
 Just after connection, the some boot code will be executed in browser. You can control this using the following functions:

@@ -567,11 +567,13 @@ const make_conn=()=>{
            (warn "Cannot find debug session!")))))
 
 (defmacro def-session-var (vr &optional init)
-  (let ((h (gentemp)))
+  (let ((h (gentemp))
+        (def (gentemp)))
     `(progn
        (defvar ,h (make-hash-table))
+       (defparameter ,def ,init)
        (define-symbol-macro ,vr
-         (gethash (current-session-id) ,h ,init)))))
+         (gethash (current-session-id) ,h ,def)))))
 
 (defun remote-unintern (sym)
   "Unintern the symbol within all active sessions, mandatory to reflect symbol redefinition.
