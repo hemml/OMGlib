@@ -56,6 +56,7 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
   (create-element "div"
     :append-element (create-element "h1"
                                     :append-element "Some text"))
+    :append-elements element-list
   ```
 
 - `(append-element element &optional parent)` - append DOM `element` as a child to the `parent`. If the `parent` is omitted, the element will be appended to `document`. A text string can be supplied instead of DOM element to add a text node.
