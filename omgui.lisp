@@ -235,6 +235,8 @@
                (app-el v))
               ((equal k :append-elements)
                (map nil #'app-el v))
+              ((equal k :add-style)
+               (add-style el v))
               (t (let* ((path (js-string-split (symbol-name k) #\.))
                         (obj (deep-oget-1 el path))
                         (fld (car (last path))))

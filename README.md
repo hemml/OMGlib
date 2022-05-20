@@ -59,6 +59,13 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
     :append-elements element-list
   ```
 
+  Also, it is possible to add custom CSS style to the element:
+
+  ```
+  (create-element "div"
+    :add-style ":hover {cursor:pointer;}"
+  ```
+
 - `(append-element element &optional parent)` - append DOM `element` as a child to the `parent`. If the `parent` is omitted, the element will be appended to `document`. A text string can be supplied instead of DOM element to add a text node.
 
 - `(check-element ID)` - check if DOM element with `ID` exists.
