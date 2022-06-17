@@ -57,6 +57,7 @@
            register-hash-cb
            remove-element
            rm-event-handler
+           session-storage
            show-notification
            visible-width
            visible-height
@@ -78,6 +79,14 @@
 
 (defun-f (setf local-storage) (val key)
   ((jscl::oget (winref "localStorage") "setItem") (jscl::lisp-to-js key) val))
+
+(defun-f session-storage (key &optional def)
+  (let ((vl ((jscl::oget (winref "sessionStorage") "getItem") (jscl::lisp-to-js key))))
+    (if (jscl::js-null-p vl) def vl)))
+
+(defun-f (setf session-storage) (val key)
+  ((jscl::oget (winref "sessionStorage") "setItem") (jscl::lisp-to-js key) val))
+
 
 (defmacro-f async-bind (vcmd &rest cod)
   (let ((res (gensym)))

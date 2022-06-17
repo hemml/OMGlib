@@ -141,6 +141,8 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(local-storage key &optional def-val)` `(setf (local-storage key) val)` - interface to the `localStorage` API. Accepts any values, returns strings only.
 
+- `(session-storage key &optional def-val)` `(setf (session-storage key) val)` - interface to the `sessionStorage` API. Accepts any values, returns strings only.
+
 - `(show-notification header body &key period check)` - show notification (not a browser notification, just a widget) with header and body (might be strings or dom elements). Supply `period` parameter if you want to show the notification again after some period (in seconds), if user closes it. If function `check` supplied, it will called before notification reappear and if returns `nil` the notification will not be shown anymore.
 
   Example:
