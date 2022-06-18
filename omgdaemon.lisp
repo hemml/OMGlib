@@ -593,9 +593,9 @@
   (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
       (format t "SWANK NOT DEAD!!1111~%"))
   (kill-all-threads)
-  ;;(sb-ext:gc :full t)
+  (sb-ext:gc :full t)
   (sb-ext:save-lisp-and-die (merge-pathnames (make-pathname :name "omgdaemon"))
-                            :executable t :save-runtime-options t :purify nil :toplevel #'run-daemon))
+                            :executable t :save-runtime-options t :purify t :toplevel #'run-daemon))
 
 (defun make-docker-image (&optional tag)
   (with-input-from-string
