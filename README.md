@@ -240,10 +240,11 @@ You can display modal dialog in the browser using the `modal-dialog` macro:
 (in-debug-session
   (print (modal-dialog "Dialog header"
                        "Dialog text"))
-                       :lines (list :line1 "field 1"
-                                    :line2 "field 2"
-                                    :buttons (list (list "OK" #'dialog-ok)
-                                                   (list "Cancel" #'close-current-dialog))))
+                       :lines '(:line1 "field 1"
+                                :line2 ("field 2" :default "12345")
+                                :pass ("Password:" :type "password")
+                                :buttons (("OK" #'dialog-ok)
+                                          ("Cancel" #'close-current-dialog))))
 ;; ((:line1 "Text in the line 1"))
     (:line2 "Text in the line 2")
 ```
