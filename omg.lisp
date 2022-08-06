@@ -209,7 +209,7 @@
                   (if (assoc ',(cadr name) jscl::*setf-expanders*)
                       (setf (cdr (assoc ',(cadr name) jscl::*setf-expanders*)) ,lam)
                       (push (cons ',(cadr name) ,lam) jscl::*setf-expanders*)))
-              `(progn
+              `(eval-when (:execute)
                  (defmacro ,name (&rest args)
                     (if *in-f-macro*
                        `',(cons ',name (mapcar #'f-eval args))
