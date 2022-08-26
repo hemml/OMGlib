@@ -188,7 +188,7 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 ### Creating SVG elements
 
-You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For exanple, the following code will return SVG-object with circle:
+You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For example, the following code will return SVG-object with circle:
 
 ```
 (make-svg :|viewBox| "0 0 100 100"
@@ -271,7 +271,7 @@ To make a password input use line `(:mypass "Password" :type "password")`
 
 - **All browser-side functions must be declared in your own package(s), not in CL-USER.** See [How it works](#how-it-works) for details.
 
-- The library tested in SBCL, but may work in other CL impementations too. The browser code will be executed in JSCL environment, where not all of the standard CL library functions are implemented yet, so you have to respect JCSL limitations on browser-side.
+- The library tested in SBCL, but may work in other CL implementations too. The browser code will be executed in JSCL environment, where not all of the standard CL library functions are implemented yet, so you have to respect JCSL limitations on browser-side.
 
 - All the function parameters and their results must be serializable via standard LISP reader/writer, so you cannot return, for example, DOM object from browser-side function to backend, and put a hash-table as a parameter to browser-side function when calling it on backend. But you can use any allowed data types while you are still on backend or browser-side, if a b-s function will be called only by another b-s functions it can return DOM objects. Also, you can pass a lambdas as arguments of b-s functions, they will be compiled and executed on browser-side. The backend functions can be passed as parameter to bs-functions, they will work on the backend, while called on brower-side, but you will get a security warning during compilation.
 
@@ -282,7 +282,7 @@ To make a password input use line `(:mypass "Password" :type "password")`
   (some-bs-function '(a b c)) ;; will not work
   ```
 
-  This is because the CL macros cannot distinct function calls and lists, constructed by quotation and quasiquotations. The second line will be threated as `(some-bs-function (a b c))`.
+  This is because the CL macros cannot distinct function calls and lists, constructed by quotation and quasiquotations. The second line will be treated as `(some-bs-function (a b c))`.
 
 - CLOS on browser-side is not implemented yet. And there may be some fundamental difficulties to implement it (see [How it works](#how-it-works) section).
 
