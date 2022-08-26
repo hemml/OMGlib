@@ -102,7 +102,7 @@
 
 (defvar *in-f-macro* nil)   ;; If T -- do not convert -f function calls to (remote-exec ...) (don't change manually!!!)
 
-(defvar *exported-function-names* nil) ;; association list where browser-side functions associated with their names
+(defvar *exported-function-names* nil) ;; list of browser-side functions
 
 (defvar *local-lambdas* (make-hash-table)) ;; list of unnamed functions, passed as arguments to browser-side ones
                                            ;; used by exec-local-lambda RPC-function to determine what lambda to execute
@@ -156,9 +156,9 @@
         ((and (symbolp arg) (boundp arg))
          (eval arg))
         ((functionp arg)
-         (let ((f (assoc arg *exported-function-names*)))
+         (let ((f (find (nth-value 2 (function-lambda-expression arg)) *exported-function-names*)))
            (if f
-               `(symbol-function (quote ,(cdr f)))  ;; browser-side function
+               `(symbol-function (quote ,f))  ;; browser-side function
                (let ((id (random-key *local-lambdas*)))
                  (warn "Passing a local function as a parameter of browser-side function is dangerous!")
                  (setf (gethash-lock id *local-lambdas*) arg)
@@ -215,9 +215,9 @@
                        `',(cons ',name (mapcar #'f-eval args))
                        (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
                           `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
-                 (if (not (assoc (function ,name) *exported-function-names*))
-                     (setf *exported-function-names* (cons (cons (function ,name) ',name) *exported-function-names*))) ;; It is strange, but PUSH causes error here!
-                 #',name))))))
+                 (if (not (find ',name *exported-function-names*))
+                     (push ',name *exported-function-names*))
+                 ',name))))))
 
 (defmacro make-var-macro-f (op)
   "A macro for variables-parameters-constants definitions"
