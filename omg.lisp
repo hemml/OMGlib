@@ -209,14 +209,14 @@
                   (if (assoc ',(cadr name) jscl::*setf-expanders*)
                       (setf (cdr (assoc ',(cadr name) jscl::*setf-expanders*)) ,lam)
                       (push (cons ',(cadr name) ,lam) jscl::*setf-expanders*)))
-              `(progn
+              `(eval-when (:execute)
                  (defmacro ,name (&rest args)
                     (if *in-f-macro*
                        `',(cons ',name (mapcar #'f-eval args))
                        (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
                           `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
-                 (if (not (assoc (macro-function ',name) *exported-function-names*))
-                     (setf *exported-function-names* (cons (cons (macro-function ',name) ',name) *exported-function-names*))) ;; It is strange, but PUSH causes error here!
+                 (if (not (assoc (function ,name) *exported-function-names*))
+                     (setf *exported-function-names* (cons (cons (function ,name) ',name) *exported-function-names*))) ;; It is strange, but PUSH causes error here!
                  #',name))))))
 
 (defmacro make-var-macro-f (op)
