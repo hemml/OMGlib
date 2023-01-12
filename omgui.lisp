@@ -31,7 +31,9 @@
            get-omg-cookie-name
            get-my-version
            js-get-element-by-id
+           jsceil
            jsfloor
+           jstrunc
            jsln
            jslog
            jsmax
@@ -155,6 +157,14 @@
 (defun-f jsfloor (x)
   "Math.floor function"
   ((jscl::oget (jscl::%js-vref "Math") "floor") x))
+
+(defun-f jsceil (x)
+  "Math.ceil function"
+  ((jscl::oget (jscl::%js-vref "Math") "ceil") x))
+
+(defun-f jstrunc (x)
+  "Math.trunc function"
+  ((jscl::oget (jscl::%js-vref "Math") "trunc") x))
 
 (defun-f jsln (&rest args)
   "Math.log function"
