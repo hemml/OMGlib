@@ -186,6 +186,13 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
   (rm-event-handler "document.body.onmousemove" #'my-callback)
   ```
 
+- `(make-tab-form tab-definitions)` - return DOM element, a form with multiple tabs. The tab definitions must be in the following form:
+
+  ```
+  (make-tab-form `(("Tab1 title" . ,tab1-contents-element)
+                   ("Tab2 title" . ,tab2-contents-element)))
+  ```
+
 ### Creating SVG elements
 
 You can create `SVG` elements with `make-svg` function. The function accepts parameter pairs like `:|attributename| value` for attributes and `(tag-name ...attributes and subtags)` for inner elements. A string parameter will be inserted as a tag body. For example, the following code will return SVG-object with circle:

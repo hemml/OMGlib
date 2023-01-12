@@ -54,6 +54,7 @@
            make-js-function
            make-js-object
            make-svg
+           make-tab-form
            modal-dialog
            on-element-remove
            page-width
@@ -935,6 +936,64 @@
                         (cdr hnd)))
                 hnd))
           *global-event-handlers*)))
+
+(defun-f make-tab-form (tab-list)
+  (let* ((tab-div (create-element "div" :|style.display| "flex"
+                                        :|style.position| "relative"))
+         (content (create-element "div" :|style.padding| "1em"
+                                        :|style.borderLeft| "1px solid gray"
+                                        :|style.borderRight| "1px solid gray"
+                                        :|style.borderBottom| "1px solid gray"))
+         (outer (create-element "div"
+                  :append-element tab-div
+                  :append-element content))
+         (tbs nil))
+    (map nil
+      (lambda (tab num)
+        (append-element
+          (let ((tb (create-element "div" :|style.borderTop| "1px solid gray"
+                                          :|style.borderLeft| "1px solid gray"
+                                          :|style.borderRight| "1px solid gray"
+                                          :|style.borderBottom| (if (= 0 num) "none" "1px solid gray")
+                                          :|style.background| (if (= 0 num) "#ffffff" "#f0f0f0")
+                                          :|style.paddingTop| "0.25em"
+                                          :|style.paddingBottom| "0.25em"
+                                          :|style.paddingLeft| "1em"
+                                          :|style.paddingRight| "1em"
+                                          :|style.borderRadius| "0.5em 0.5em 0 0"
+                                          :|style.display| "inline-block"
+                      :append-element (create-element "a" :|href| "#"
+                                        :append-element (car tab)
+                                        :|onclick| (lambda (ev)
+                                                     (map nil
+                                                       (lambda (tab)
+                                                         (setf (jscl::oget (cdr tab) "style" "display") "none")
+                                                         (setf (jscl::oget (cdr tab) "style" "display") "none"))
+                                                       tab-list)
+                                                     (map nil
+                                                       (lambda (th tn)
+                                                         (setf (jscl::oget th "style" "background")
+                                                               (if (= tn num) "#ffffff" "#f0f0f0"))
+                                                         (setf (jscl::oget th "style" "borderBottom")
+                                                               (if (= tn num) "none" "1px solid gray")))
+                                                       tbs
+                                                       (loop for i below (length tbs) collect i))
+                                                     (setf (jscl::oget (cdr tab) "style" "display") "block")
+                                                     nil)))))
+            (setf tbs `(,@tbs ,tb))
+            (setf (jscl::oget (cdr tab) "style" "display") (if (= num 0) "block" "none"))
+            (append-element (cdr tab) content)
+            tb)
+          tab-div))
+      tab-list
+      (loop for i below (length tab-list) collect i))
+    (append-element (create-element "div" :|style.display| "inline-block"
+                                          :|style.width| "auto"
+                                          :|style.borderBottom| "1px solid gray"
+                                          :|style.flexGrow| 1)
+                    tab-div)
+    outer))
+
 
 (defun-f make-dragabble-list (elements &key (outer-type "div") reorder-cb on-drag insert-el)
   (let* ((trans "all 0.5s linear")
