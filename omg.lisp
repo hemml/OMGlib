@@ -397,7 +397,7 @@ jscl.internals.intern=(name, package_name)=>{
   let sym=omgOriginalIntern(name, package_name)
   const full_name=package_name+':'+name
   if('package' in sym&&sym.package.omgPkg&&sym.value===undefined&&
-     sym.fvalue===jscl.internals.unboundFunction&&!omgInFetch[full_name]) {
+     !jscl.internals.fboundp(sym)&&!omgInFetch[full_name]) {
     sym.fvalue=omgFetchFvalue(sym)
   }
   return sym
