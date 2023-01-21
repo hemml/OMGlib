@@ -9,8 +9,11 @@
            start-server      ;; start a http(s)-server
            kill-server       ;; kill a http(s)-server
            restart-server    ;; restart a http(s)-server
+           defclass-f        ;; define a browser-side class
            defun-f           ;; define a browser-side function
            defmacro-f        ;; define a browser-side macro
+           defmethod-f       ;; define a browser-side method
+           defgeneric-f      ;; define a browser-side generic
            defvar-f          ;; define a browser-side variable
            defparameter-f    ;; define a browser-side parameter
            defconstant-f     ;; define a browser-side constant
@@ -192,32 +195,45 @@
        `(progn
          ,@macro-hook
          (remhash ',ex-sym *rpc-functions*) ;; Unregister possible RPC function with the same name
-         (setf (gethash-lock ',ex-sym *exportable-expressions*) ',f-form)
          (remote-unintern ',ex-sym) ;; unintern the function in all connected browsers
-         ,(if is-setf
-              `(let* ((,asym ',args)
-                      (,bdsym ',body)
-                      (,a2sym (list ,@args2))
-                      (,lam (lambda ,(cdr args)
-                              (values
-                               (list ,@(cdr args2))
-                               (list ,@(cdr args))
-                               (list ,(car args2))
-                               `(apply (lambda ,,asym ,@,bdsym)
-                                       (list ,@,a2sym))
-                               (list ',(cdr name) ,@(cdr args2))))))
-                  (if (assoc ',(cadr name) jscl::*setf-expanders*)
-                      (setf (cdr (assoc ',(cadr name) jscl::*setf-expanders*)) ,lam)
-                      (push (cons ',(cadr name) ,lam) jscl::*setf-expanders*)))
-              `(progn
-                 (defmacro ,name (&rest args)
-                    (if *in-f-macro*
-                       `',(cons ',name (mapcar #'f-eval args))
-                       (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
-                          `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
-                 (if (not (find ',name *exported-function-names*))
-                     (push ',name *exported-function-names*))
-                 ',name))))))
+         ,(cond (is-setf
+                 `(let* ((,asym ',args)
+                         (,bdsym ',body)
+                         (,a2sym (list ,@args2))
+                         (,lam (lambda ,(cdr args)
+                                 (values
+                                  (list ,@(cdr args2))
+                                  (list ,@(cdr args))
+                                  (list ,(car args2))
+                                  `(apply (lambda ,,asym ,@,bdsym)
+                                          (list ,@,a2sym))
+                                  (list ',(cdr name) ,@(cdr args2))))))
+                     (if (assoc ',(cadr name) jscl::*setf-expanders*)
+                         (setf (cdr (assoc ',(cadr name) jscl::*setf-expanders*)) ,lam)
+                         (push (cons ',(cadr name) ,lam) jscl::*setf-expanders*))))
+                ((or (equal ',op 'defmethod)
+                     (equal ',op 'defgeneric))
+                 `(progn
+                    (if (not (find ',name *exported-function-names*))
+                        (progn
+                          (push ',name *exported-function-names*)
+                          (setf (gethash-lock ',ex-sym *exportable-expressions*) (list 'progn ',f-form)))
+                        (let* ((defs (cdr (gethash-lock ',ex-sym *exportable-expressions*)))
+                               (pos (position ',args defs :test #'tree-equal :key #'caddr))) ;; FIXME: need to compare lambda lists here, not just to use #'tree-equal
+                          (setf (gethash-lock ',ex-sym *exportable-expressions*)
+                                (if pos
+                                    `(progn ,@(subseq defs 0 pos) ,',f-form ,@(subseq defs (+ pos 1)))
+                                    `(progn ,@defs ,',f-form)))))))
+                (t `(progn
+                      (setf (gethash-lock ',ex-sym *exportable-expressions*) ',f-form)
+                      (defmacro ,name (&rest args)
+                         (if *in-f-macro*
+                            `',(cons ',name (mapcar #'f-eval args))
+                            (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
+                               `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
+                      (if (not (find ',name *exported-function-names*))
+                          (push ',name *exported-function-names*)))))
+         ',name))))
 
 (defmacro make-var-macro-f (op)
   "A macro for variables-parameters-constants definitions"
@@ -230,9 +246,19 @@
               (,op ,name ,val)
               (remote-unintern ',name)))))
 
+(defmacro defclass-f (name &rest args)
+  (let ((f-form `(defclass ,name ,@args))
+        (tmp (gensym)))
+    `(let ((,tmp (jscl::with-compilation-environment     ;; We need to compile defclass locally
+                   (jscl::compile-toplevel ',f-form))))  ;;    to proper setup jscl compilation environment
+       (declare (ignore ,tmp))
+       (remote-rdefclass ',name)
+       (setf (gethash-lock ',name *exportable-expressions*) ',f-form))))
 
 (make-def-macro-f defun)    ;; defun-f
 (make-def-macro-f defmacro) ;; defmacro-f
+(make-def-macro-f defmethod) ;; defmethod-f
+(make-def-macro-f defgeneric) ;; defgeneric-f
 
 (make-var-macro-f defvar)       ;; defvar-f
 (make-var-macro-f defparameter) ;; defparameter-f
@@ -359,24 +385,33 @@ jscl.internals.symbolValue=(symbol)=>{
 
 const omgOriginalIntern=jscl.internals.intern
 
-const omgFetchFvalue=(sym)=>{
-  let isFetched=false
-  return (...args)=>{
-    if(isFetched) return sym.fvalue.apply(null,args)
-    const full_name=sym.package.packageName+':'+sym.name
-    //console.log('FVALUE FETCH:',full_name)
+const omgFetch=(sym)=>{
+  const full_name=sym.package.packageName+':'+sym.name
+  //console.log('FVALUE FETCH:',full_name)
+  if(!omgInFetch[full_name]) {
     omgInFetch[full_name]=true
     let xhr=new XMLHttpRequest()
     xhr.open('POST', omgBase+'" *root-path* *gimme-path* "', false)
     xhr.send(full_name)
     if (xhr.status === 200) {
+      //console.log(xhr.response)
       eval(xhr.response)
-      isFetched=true
-      sym.fvalue=sym.package.symbols[sym.name].fvalue
-      return sym.fvalue.apply(null,args)
+      omgInFetch[full_name]=false
     } else {
+      omgInFetch[full_name]=false
       throw new Error('Cannot fetch symbol '+sym.package.packageName+'::'+sym.name)
     }
+  }
+}
+
+const omgFetchFvalue=(sym)=>{
+  let isFetched=false
+  return (...args)=>{
+    if(isFetched) return sym.fvalue.apply(null,args)
+    omgFetch(sym)
+    isFetched=true
+    sym.fvalue=sym.package.symbols[sym.name].fvalue
+    return sym.fvalue.apply(null,args)
   }
 }
 
@@ -448,20 +483,8 @@ const omgOriginalLIL=jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue
 jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue=(mv,name,lexenv,ns)=>{
   let res=omgOriginalLIL(mv,name,lexenv,ns)
   if(ns.name==='FUNCTION' && 'package' in name && name.package.omgPkg && 'name' in res && res.name==='NIL') {
-    const full_name=name.package.packageName+':'+name.name
-    if(!omgInFetch[full_name]) {
-      //console.log('LIL FETCH:',full_name,omgInFetch)
-      omgInFetch[full_name]=true
-      let xhr=new XMLHttpRequest()
-      xhr.open('POST', omgBase+'" *root-path* *gimme-path* "', false)
-      xhr.send(full_name)
-      if (xhr.status === 200) {
-        eval(xhr.response)
-        res=omgOriginalLIL(mv,name,lexenv,ns)
-      } else {
-        throw 'Cannot fetch symbol: '+full_name
-      }
-    }
+    omgFetch(name)
+    res=omgOriginalLIL(mv,name,lexenv,ns)
   }
   return res
 }
@@ -483,6 +506,26 @@ jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
     }
   }
   return omgOriginalGSE(mv,fn)
+}
+
+const omgOriginalFC=jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue
+jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
+  if(cls.package.omgPkg&&
+     !cls.package.symbols[cls.name].omgClass) {
+    cls.package.symbols[cls.name].omgClass=true
+    omgFetch(cls)
+  }
+  return omgOriginalFC(mv,cls,arg2)
+}
+
+const omgOriginalCO=jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue
+jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue=(mv,cls)=>{
+  if('package' in cls && cls.package.omgPkg &&
+     !cls.package.symbols[cls.name].omgClass) {
+    cls.package.symbols[cls.name].omgClass=true
+    omgFetch(cls)
+  }
+  return omgOriginalCO(mv,cls)
 }
 
 
@@ -588,6 +631,20 @@ const make_conn=()=>{
                                 sym-pkg sym-name sym-pkg sym-pkg sym-name sym-pkg sym-name sym-name sym-pkg sym-pkg sym-name)))
          (send-text (socket s) cmd))))
 
+(defun remote-rdefclass (cls)
+  (loop for s being the hash-values of *session-list* do
+       (let* ((cls-name (symbol-name cls))
+              (cls-pkg (package-name (symbol-package cls)))
+              (cmd (format nil "if(\"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"].symbols &&
+                                   \"omgClass\" in jscl.packages[\"~A\"].symbols[\"~A\"]) {
+            delete(omgInFetch[\"~A:~A\"])
+            omgFetch(jscl.packages[\"~A\"].symbols[\"~A\"])}"
+                                cls-pkg cls-name cls-pkg cls-pkg cls-name
+                                cls-pkg cls-name
+                                cls-pkg cls-name)))
+         (send-text (socket s) cmd))))
+
+
 ;; From LISP Cookbook
 (defun replace-all (string part replacement &key (test #'char=))
   "Returns a new string in which all the occurences of the part is replaced with replacement."
@@ -611,14 +668,17 @@ const make_conn=()=>{
          (c1 (write-to-string
                `(let ((*package* (find-package (intern ,(package-name pkg) :keyword))))
                   ,code)))
-         (code (if *local-compile*
+         (compile-local *local-compile*)
+         (code (if compile-local
                    (jscl::with-compilation-environment
                      (jscl::compile-toplevel (jscl::ls-read-from-string c1) t t))
-                   (write-to-string code)))
-         (rcode (replace-all (replace-all (replace-all (replace-all code "\\" "\\\\") (string #\linefeed) "\\n") (string #\return) "\\\\r") "\"" "\\\""))
-         (res (if *local-compile*
+                   (write-to-string c1)))
+         (rcode (if compile-local
+                    (replace-all (replace-all (replace-all (replace-all code "\\" "\\\\") (string #\linefeed) "\\n") (string #\return) "\\\\r") "\"" "\\\"")
+                    (replace-all (replace-all code (string #\linefeed) " ") (string #\return) " ")))
+         (res (if compile-local
                   (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(\"" rcode "\"))")
-                  (concatenate 'string "jscl.evaluateString(\"" rcode "\")"))))
+                  (concatenate 'string "jscl.evaluateString(" rcode ")"))))
      (if reskey
          (let* ((gwl (gethash-lock reskey *gimme-wait-list*))
                 (sem (cdr (assoc :sem gwl)))

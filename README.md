@@ -291,8 +291,6 @@ To make a password input use line `(:mypass "Password" :type "password")`
 
   This is because the CL macros cannot distinct function calls and lists, constructed by quotation and quasiquotations. The second line will be treated as `(some-bs-function (a b c))`.
 
-- CLOS on browser-side is not implemented yet. And there may be some fundamental difficulties to implement it (see [How it works](#how-it-works) section).
-
 - There is no error propagation yet between browser and backend. If bs-function causes a error, `nil` will be returned.
 
 - Hygienic macros _must_ use `gensym2` instead of `gensym`
@@ -327,8 +325,6 @@ Just after websocket connection, the browser-side has no declared symbols and fu
 
 The library determines which symbols must be fetched from backend just by their packages: if the package still not exists, it will be created on-the-fly with `defpackage`, `cl` and `jscl` packages will be used. All created packages will be marked as _remote_ and the library will try to fetch unknown symbols from that packages from the backend. This is the reason, why you cannot define browser-side functions just in `CL-USER`.
 
-The CLOS is not implemented in browser-side. It is implemented in JSCL, but I see no way to catch access to undefined methods if several methods are defined with same names. If you are know how to implement this - tell me :)
-
 ### Browser-side macros
 
 Browser-side macros are called while code is compiled to JS and must be evaluated on the browser side. So, if you are use such macros while the `omg::*local-compile*` is set to `T` (by default), JSCL will parse the code and execute code of each macro in the browser, get the results and finish the compilation using them. This means that while local compilation is enabled, macro expansion will be rather expensive, especially, if you are using recursive macros. Also, all of the macro output must be transferred from the browser to the host, so you cannot use just `(gensym)` to generate temporary symbols, they are must be interned to be properly transferred. Intern all of your symbols manually or just use helper function `(gensym2)` from OMGUI package.
@@ -347,6 +343,10 @@ Also, you can asynchronously call any RPC function using `async-bind` macro:
 (async-bind (res (some-rpc-function arg1 arg2))
   (jslog res) ;; The code will be executed asynchronously after RPC call completion
 ```
+
+### CLOS
+
+The preliminary CLOS support is added. You can use `defclass-f`, `defmethod-f` and `defgeneric-f` to create browser-side classes, methods and generics. May be buggy, please report all bugs found. Browser-side methods cannot be invoked directly from the host, use `remote-exec` instead. The CLOS implementation is JSCL is very old and may be obsolete, see JSCL documentation and issues on github. For example there is problems with accessors setf expanders.
 
 ### Sessions
 
