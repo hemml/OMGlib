@@ -106,9 +106,19 @@
 (defvar *in-f-macro* nil)   ;; If T -- do not convert -f function calls to (remote-exec ...) (don't change manually!!!)
 
 (defvar *exported-function-names* nil) ;; list of browser-side functions
+(defvar *exported-classes-methods* (make-hash-table)) ;; methods for browser-side classess, which are not in omg packages
 
 (defvar *local-lambdas* (make-hash-table)) ;; list of unnamed functions, passed as arguments to browser-side ones
                                            ;; used by exec-local-lambda RPC-function to determine what lambda to execute
+
+(defun is-system-pkg (pkg)
+  (or (equal pkg (find-package :common-lisp))
+      (equal pkg (find-package :common-lisp-user))
+      (equal pkg (find-package :keyword))
+      (equal pkg (find-package :cl))
+      (equal pkg (find-package :cl-user))
+      (equal pkg (find-package :jscl))
+      (equal pkg (find-package :jscl/loop))))
 
 (defun register-rpc (name)
   (remhash name *exportable-expressions*)
@@ -172,6 +182,10 @@
   "Just a macro to generate macros for f-functions and f-macros definintions (defun-f, defmacro-f, etc...)"
   `(defmacro ,(read-from-string (format nil "~a-f" op)) (name args &rest body)
      (let* ((op ',op)
+            (clos-args (if (and (equal 'defmethod op)
+                                (not (listp args)))
+                           (cons args (car body))
+                           args))
             (is-setf (and (listp name) (equal (car name) 'setf)))
             (ex-sym (if is-setf
                         (intern (format nil "(SETF_~A)" (symbol-name (cadr name)))
@@ -213,17 +227,37 @@
                          (push (cons ',(cadr name) ,lam) jscl::*setf-expanders*))))
                 ((or (equal ',op 'defmethod)
                      (equal ',op 'defgeneric))
-                 `(progn
+                 `(let ((classes (labels ((flatten (l) (if (listp l) (mapcan #'flatten l) (list l))))
+                                   (remove-duplicates
+                                     (remove-if-not
+                                       (lambda (sym)
+                                         (cadr (multiple-value-list (gethash-lock sym *exported-classes-methods*))))
+                                       (remove-if-not #'symbolp (flatten ',clos-args)))))))
                     (if (not (find ',name *exported-function-names*))
                         (progn
                           (push ',name *exported-function-names*)
                           (setf (gethash-lock ',ex-sym *exportable-expressions*) (list 'progn ',f-form)))
                         (let* ((defs (cdr (gethash-lock ',ex-sym *exportable-expressions*)))
-                               (pos (position ',args defs :test #'tree-equal :key #'caddr))) ;; FIXME: need to compare lambda lists here, not just to use #'tree-equal
+                               (pos (position ',clos-args
+                                              defs :test
+                                              #'tree-equal ;; FIXME: need to compare lambda lists here, not just to use #'tree-equal
+                                              :key (lambda (l)
+                                                     (if (listp (caddr l))
+                                                         (caddr l)
+                                                         (cons (caddr l) (cadddr l)))))))
                           (setf (gethash-lock ',ex-sym *exportable-expressions*)
                                 (if pos
                                     `(progn ,@(subseq defs 0 pos) ,',f-form ,@(subseq defs (+ pos 1)))
-                                    `(progn ,@defs ,',f-form)))))))
+                                    `(progn ,@defs ,',f-form)))))
+                    (if (and classes (is-system-pkg (symbol-package ',name)))
+                        (progn
+                          (jscl::with-compilation-environment  ;; We need to compile specific methods locally to proper setup jscl clos environment
+                            (jscl::compile-toplevel ',f-form))
+                          (map nil
+                            (lambda (cls)
+                              (pushnew ',name (gethash-lock cls *exported-classes-methods*)))
+                            classes)
+                          (remote-update-methods ',name classes)))))
                 (t `(progn
                       (setf (gethash-lock ',ex-sym *exportable-expressions*) ',f-form)
                       (defmacro ,name (&rest args)
@@ -252,8 +286,9 @@
     `(let ((,tmp (jscl::with-compilation-environment     ;; We need to compile defclass locally
                    (jscl::compile-toplevel ',f-form))))  ;;    to proper setup jscl compilation environment
        (declare (ignore ,tmp))
-       (remote-rdefclass ',name)
-       (setf (gethash-lock ',name *exportable-expressions*) ',f-form))))
+       (setf (gethash-lock ',name *exportable-expressions*) ',f-form)
+       (setf (gethash-lock ',name *exported-classes-methods*) (list))
+       (remote-rdefclass ',name))))
 
 (make-def-macro-f defun)    ;; defun-f
 (make-def-macro-f defmacro) ;; defmacro-f
@@ -644,6 +679,26 @@ const make_conn=()=>{
                                 cls-pkg cls-name)))
          (send-text (socket s) cmd))))
 
+(defun remote-update-methods (method classess)
+  (loop for s being the hash-values of *session-list* do
+       (let* ((mathod-name (symbol-name method))
+              (mathod-pkg (package-name (symbol-package method)))
+              (cmd (format nil "~{{~A}~}"
+                     (mapcar
+                       (lambda (cls-name cls-pkg)
+                         (format nil "if(\"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"].symbols &&
+                                         \"omgClass\" in jscl.packages[\"~A\"].symbols[\"~A\"] &&
+                                         \"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"].symbols) {
+                                       omgFetch(jscl.packages[\"~A\"].symbols[\"~A\"])
+                                     }"
+                           cls-pkg cls-name cls-pkg
+                           cls-pkg cls-name
+                           mathod-pkg mathod-name mathod-pkg
+                           mathod-pkg mathod-name))
+                       (mapcar #'symbol-name classess)
+                       (mapcar #'package-name (mapcar #'symbol-package classess))))))
+         (send-text (socket s) cmd))))
+
 
 ;; From LISP Cookbook
 (defun replace-all (string part replacement &key (test #'char=))
@@ -705,7 +760,15 @@ const make_conn=()=>{
 
 (defun gimme (sym)
   "The handler for gimme-requests, which are used to request unknown symbols from the server-side."
-  (let ((datp (gethash-lock sym *exportable-expressions*)))
+  (let* ((datp1 (gethash-lock sym *exportable-expressions*))
+         (clsm (if datp1
+                   (gethash-lock sym *exported-classes-methods*)))
+         (datp (if clsm
+                   `(progn ,datp1 ,@(mapcar
+                                      (lambda (m)
+                                        (gethash-lock m *exportable-expressions*))
+                                      clsm))
+                   datp1)))
     (if datp
        (let* ((dat (if (boundp sym)
                        (list (car datp) (cadr datp)
