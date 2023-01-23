@@ -720,8 +720,24 @@ const make_conn=()=>{
   "Return JS for the code, pkg is current package for compilation context.
    The reskey is the *gimme-wait-list* key, the place to store compilation result."
   (let* ((*package* pkg)
+         (auto-funcs (if (and (listp code)
+                              (equal 'defclass (car code)))
+                         (mapcan
+                           (lambda (sym)
+                             (let ((cod (gethash-lock sym *exportable-expressions*)))
+                               (if cod (list cod))))
+                           (remove-duplicates
+                             (mapcan
+                               (lambda (rec)
+                                 (mapcan
+                                   (lambda (s)
+                                     (let ((r (ignore-errors (getf (cdr rec) s))))
+                                       (if r (list r))))
+                                   '(:accessor :reader :writer)))
+                               (cadddr code))))))
          (c1 (write-to-string
                `(let ((*package* (find-package (intern ,(package-name pkg) :keyword))))
+                  ,@auto-funcs
                   ,code)))
          (compile-local *local-compile*)
          (code (if compile-local
