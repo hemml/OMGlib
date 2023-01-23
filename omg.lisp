@@ -720,24 +720,8 @@ const make_conn=()=>{
   "Return JS for the code, pkg is current package for compilation context.
    The reskey is the *gimme-wait-list* key, the place to store compilation result."
   (let* ((*package* pkg)
-         (auto-funcs (if (and (listp code)
-                              (equal 'defclass (car code)))
-                         (mapcan
-                           (lambda (sym)
-                             (let ((cod (gethash-lock sym *exportable-expressions*)))
-                               (if cod (list cod))))
-                           (remove-duplicates
-                             (mapcan
-                               (lambda (rec)
-                                 (mapcan
-                                   (lambda (s)
-                                     (let ((r (ignore-errors (getf (cdr rec) s))))
-                                       (if r (list r))))
-                                   '(:accessor :reader :writer)))
-                               (cadddr code))))))
          (c1 (write-to-string
                `(let ((*package* (find-package (intern ,(package-name pkg) :keyword))))
-                  ,@auto-funcs
                   ,code)))
          (compile-local *local-compile*)
          (code (if compile-local
@@ -776,15 +760,24 @@ const make_conn=()=>{
 
 (defun gimme (sym)
   "The handler for gimme-requests, which are used to request unknown symbols from the server-side."
-  (let* ((datp1 (gethash-lock sym *exportable-expressions*))
-         (clsm (if datp1
-                   (gethash-lock sym *exported-classes-methods*)))
-         (datp (if clsm
-                   `(progn ,datp1 ,@(mapcar
-                                      (lambda (m)
-                                        (gethash-lock m *exportable-expressions*))
-                                      clsm))
-                   datp1)))
+  (let* ((datp (gethash-lock sym *exportable-expressions*))
+         (auto-funcs (if (and (listp datp)
+                              (equal 'defclass (car datp)))
+                         (mapcan
+                           (lambda (sym)
+                             (let ((cod (gethash-lock sym *exportable-expressions*)))
+                               (if cod (list cod))))
+                           (append
+                             (gethash-lock sym *exported-classes-methods*)
+                             (remove-duplicates
+                               (mapcan
+                                 (lambda (rec)
+                                   (mapcan
+                                     (lambda (s)
+                                       (let ((r (ignore-errors (getf (cdr rec) s))))
+                                         (if r (list r))))
+                                     '(:accessor :reader :writer)))
+                                 (cadddr datp))))))))
     (if datp
        (let* ((dat (if (boundp sym)
                        (list (car datp) (cadr datp)
@@ -798,7 +791,12 @@ const make_conn=()=>{
           (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
           (push (bt:make-thread
                    (lambda ()
-                     (compile-to-js dat (symbol-package sym) key))
+                     (format nil "~A;~{~A~^;~}"
+                       (compile-to-js dat (symbol-package sym) key)
+                       (mapcar
+                         (lambda (f)
+                           (compile-to-js f (symbol-package sym)))
+                         auto-funcs)))
                    :initial-bindings `((*current-res* . ',key)))
                 *omg-thread-list*)
           (wait-on-semaphore sem)
