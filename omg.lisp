@@ -545,7 +545,7 @@ jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
 
 const omgOriginalFC=jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue
 jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
-  if(cls.package.omgPkg&&
+  if('package' in cls && cls.package.omgPkg &&
      !cls.package.symbols[cls.name].omgClass) {
     cls.package.symbols[cls.name].omgClass=true
     omgFetch(cls)
