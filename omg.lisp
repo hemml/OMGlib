@@ -543,6 +543,16 @@ jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
   return omgOriginalGSE(mv,fn)
 }
 
+const omgOriginalCAMUC=jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue
+jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue=(mv,gf,clss)=>{
+  let res=omgOriginalCAMUC(mv,gf,clss)
+  if ('name' in res && res.name=='NIL') {
+    omgFetch(gf.cdr.cdr.car[0])
+    res=omgOriginalCAMUC(mv,gf,clss)
+  }
+  return res
+}
+
 const omgOriginalFC=jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue
 jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
   if('package' in cls && cls.package.omgPkg &&
@@ -765,11 +775,13 @@ const make_conn=()=>{
                               (equal 'defclass (car datp)))
                          (mapcan
                            (lambda (sym)
-                             (let ((cod (gethash-lock sym *exportable-expressions*)))
-                               (if cod (list cod))))
-                           (append
-                             (gethash-lock sym *exported-classes-methods*)
-                             (remove-duplicates
+                             (labels ((gh (x) (gethash-lock x *exportable-expressions*)))
+                               (let ((cod (gh sym)))
+                                 (if cod
+                                     (list cod)))))
+                           (remove-duplicates
+                             (append
+                               (gethash-lock sym *exported-classes-methods*)
                                (mapcan
                                  (lambda (rec)
                                    (mapcan
