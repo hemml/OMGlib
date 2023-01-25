@@ -775,21 +775,11 @@ const make_conn=()=>{
                               (equal 'defclass (car datp)))
                          (mapcan
                            (lambda (sym)
-                             (labels ((gh (x) (gethash-lock x *exportable-expressions*)))
-                               (let ((cod (gh sym)))
+                               (let ((cod (gethash-lock sym *exportable-expressions*)))
                                  (if cod
-                                     (list cod)))))
+                                     (list cod))))
                            (remove-duplicates
-                             (append
-                               (gethash-lock sym *exported-classes-methods*)
-                               (mapcan
-                                 (lambda (rec)
-                                   (mapcan
-                                     (lambda (s)
-                                       (let ((r (ignore-errors (getf (cdr rec) s))))
-                                         (if r (list r))))
-                                     '(:accessor :reader :writer)))
-                                 (cadddr datp))))))))
+                             (gethash-lock sym *exported-classes-methods*))))))
     (if datp
        (let* ((dat (if (boundp sym)
                        (list (car datp) (cadr datp)
@@ -797,18 +787,17 @@ const make_conn=()=>{
                            (if (listp sv)
                                `(quote ,sv)
                                sv)))
-                       datp))
+                       (if auto-funcs
+                           `(progn ,datp ,@auto-funcs)
+                           datp)))
               (sem (make-semaphore))
               (key (random-key *gimme-wait-list* |sid-length|)))
           (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
+          (if auto-funcs
+              (format t "~&~A : ~A~%" dat auto-funcs))
           (push (bt:make-thread
                    (lambda ()
-                     (format nil "~A;~{~A~^;~}"
-                       (compile-to-js dat (symbol-package sym) key)
-                       (mapcar
-                         (lambda (f)
-                           (compile-to-js f (symbol-package sym)))
-                         auto-funcs)))
+                      (compile-to-js dat (symbol-package sym) key))
                    :initial-bindings `((*current-res* . ',key)))
                 *omg-thread-list*)
           (wait-on-semaphore sem)
