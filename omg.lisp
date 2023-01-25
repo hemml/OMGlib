@@ -793,8 +793,6 @@ const make_conn=()=>{
               (sem (make-semaphore))
               (key (random-key *gimme-wait-list* |sid-length|)))
           (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
-          (if auto-funcs
-              (format t "~&~A : ~A~%" dat auto-funcs))
           (push (bt:make-thread
                    (lambda ()
                       (compile-to-js dat (symbol-package sym) key))
