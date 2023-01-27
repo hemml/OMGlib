@@ -565,7 +565,7 @@ jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
 
 const omgOriginalCO=jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue
 jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue=(mv,cls)=>{
-  if('package' in cls && cls.package.omgPkg &&
+  if(typeof(cls)=='object' && 'package' in cls && cls.package.omgPkg &&
      !cls.package.symbols[cls.name].omgClass) {
     cls.package.symbols[cls.name].omgClass=true
     omgFetch(cls)
