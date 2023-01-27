@@ -287,7 +287,8 @@
                    (jscl::compile-toplevel ',f-form))))  ;;    to proper setup jscl compilation environment
        (declare (ignore ,tmp))
        (setf (gethash-lock ',name *exportable-expressions*) ',f-form)
-       (setf (gethash-lock ',name *exported-classes-methods*) (list))
+       (if (not (gethash-lock ',name *exported-classes-methods*))
+           (setf (gethash-lock ',name *exported-classes-methods*) (list)))
        (remote-rdefclass ',name))))
 
 (make-def-macro-f defun)    ;; defun-f
