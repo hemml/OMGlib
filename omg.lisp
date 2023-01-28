@@ -107,7 +107,7 @@
 
 (defvar *exported-function-names* nil) ;; list of browser-side functions
 (defvar *exported-classes-methods* (make-hash-table)) ;; methods for browser-side classess, which are not in omg packages
-
+(defvar *accessor-classes* (make-hash-table))
 (defvar *local-lambdas* (make-hash-table)) ;; list of unnamed functions, passed as arguments to browser-side ones
                                            ;; used by exec-local-lambda RPC-function to determine what lambda to execute
 
@@ -178,6 +178,11 @@
                  `(lambda (&rest args) (exec-local-lambda (cons ',id args)))))))
         (t arg)))
 
+(defun get-all-sup (cls)
+  (let ((scls (caddr (gethash-lock cls *exportable-expressions*))))
+    (if scls
+        (append scls (mapcan #'get-all-sup scls)))))
+
 (defmacro make-def-macro-f (op)
   "Just a macro to generate macros for f-functions and f-macros definintions (defun-f, defmacro-f, etc...)"
   `(defmacro ,(read-from-string (format nil "~a-f" op)) (name args &rest body)
@@ -227,12 +232,11 @@
                          (push (cons ',(cadr name) ,lam) jscl::*setf-expanders*))))
                 ((or (equal ',op 'defmethod)
                      (equal ',op 'defgeneric))
-                 `(let ((classes (labels ((flatten (l) (if (listp l) (mapcan #'flatten l) (list l))))
-                                   (remove-duplicates
-                                     (remove-if-not
-                                       (lambda (sym)
-                                         (cadr (multiple-value-list (gethash-lock sym *exported-classes-methods*))))
-                                       (remove-if-not #'symbolp (flatten ',clos-args)))))))
+                 `(let* ((classes (remove-duplicates
+                                    (remove-if-not
+                                      (lambda (cls)
+                                        (gethash-lock cls *exportable-expressions*))
+                                      (mapcar #'cadr (remove-if-not #'listp ',clos-args))))))
                     (if (not (find ',name *exported-function-names*))
                         (progn
                           (push ',name *exported-function-names*)
@@ -257,7 +261,13 @@
                             (lambda (cls)
                               (pushnew ',name (gethash-lock cls *exported-classes-methods*)))
                             classes)
-                          (remote-update-methods ',name classes)))))
+                          (remote-update-methods ',name classes)))
+                    (if (intersection (gethash-lock ',name *accessor-classes*)
+                                      (append classes (mapcan #'get-all-sup classes)))
+                        (map nil
+                          (lambda (cls)
+                            (pushnew ',name (gethash-lock cls *exported-classes-methods*)))
+                          classes))))
                 (t `(progn
                       (setf (gethash-lock ',ex-sym *exportable-expressions*) ',f-form)
                       (defmacro ,name (&rest args)
@@ -280,8 +290,8 @@
               (,op ,name ,val)
               (remote-unintern ',name)))))
 
-(defmacro defclass-f (name &rest args)
-  (let ((f-form `(defclass ,name ,@args))
+(defmacro defclass-f (name sup slots)
+  (let ((f-form `(defclass ,name ,sup ,slots))
         (tmp (gensym)))
     `(let ((,tmp (jscl::with-compilation-environment     ;; We need to compile defclass locally
                    (jscl::compile-toplevel ',f-form))))  ;;    to proper setup jscl compilation environment
@@ -289,6 +299,17 @@
        (setf (gethash-lock ',name *exportable-expressions*) ',f-form)
        (if (not (gethash-lock ',name *exported-classes-methods*))
            (setf (gethash-lock ',name *exported-classes-methods*) (list)))
+       (map nil
+         (lambda (rec)
+           (mapcan
+             (lambda (s)
+               (let ((r (getf (cdr rec) s)))
+                 (if r
+                     (setf (gethash-lock r *accessor-classes*)
+                           (remove-duplicates (cons ',name
+                                                     (gethash-lock r *accessor-classes*)))))))
+             '(:accessor :reader :writer)))
+         ',slots)
        (remote-rdefclass ',name))))
 
 (make-def-macro-f defun)    ;; defun-f
@@ -437,6 +458,8 @@ const omgFetch=(sym)=>{
       omgInFetch[full_name]=false
       throw new Error('Cannot fetch symbol '+sym.package.packageName+'::'+sym.name)
     }
+  } else {
+    console.log('Already in fetch:',sym.name)
   }
 }
 
@@ -564,16 +587,33 @@ jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
   return omgOriginalFC(mv,cls,arg2)
 }
 
-const omgOriginalCO=jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue
-jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue=(mv,cls)=>{
-  if(typeof(cls)=='object' && 'package' in cls && cls.package.omgPkg &&
+const omgOriginalFC1=jscl.packages.CL.symbols['FIND-CLASS'].fvalue
+jscl.packages.CL.symbols['FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
+  if('package' in cls && cls.package.omgPkg &&
      !cls.package.symbols[cls.name].omgClass) {
     cls.package.symbols[cls.name].omgClass=true
     omgFetch(cls)
   }
-  return omgOriginalCO(mv,cls)
+  return omgOriginalFC1(mv,cls,arg2)
 }
 
+
+/*
+const omgOriginalCO=jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue
+jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue=(mv,cls)=>{
+  if('name' in cls) {
+    console.log('CO:',cls.name,cls)
+  }
+  if(typeof(cls)=='object' && 'package' in cls && cls.package.omgPkg &&
+     !cls.package.symbols[cls.name].omgClass) {
+    cls.package.symbols[cls.name].omgClass=true
+    console.log('COF:', cls.name)
+    omgFetch(cls)
+    console.log('COF OK:', cls.name)
+  }
+  return omgOriginalCO(mv,cls)
+}
+*/
 
 const make_conn=()=>{
   console.log('Connecting to host')
@@ -726,10 +766,15 @@ const make_conn=()=>{
           when pos do (write-string replacement out)
           while pos)))
 
+(defun put-wl-result (res key)
+  (let* ((gwl (gethash-lock key *gimme-wait-list*))
+         (sem (cdr (assoc :sem gwl)))
+         (time (cdr (assoc :time gwl))))
+    (setf (gethash-lock key *gimme-wait-list*) `((:result . ,res) (:time . ,time)))
+    (signal-semaphore sem)))
 
-(defun compile-to-js (code pkg &optional reskey)
-  "Return JS for the code, pkg is current package for compilation context.
-   The reskey is the *gimme-wait-list* key, the place to store compilation result."
+(defun compile-to-js (code pkg)
+  "Return JS for the code, pkg is current package for compilation context."
   (let* ((*package* pkg)
          (c1 (write-to-string
                `(let ((*package* (find-package (intern ,(package-name pkg) :keyword))))
@@ -745,12 +790,6 @@ const make_conn=()=>{
          (res (if compile-local
                   (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(\"" rcode "\"))")
                   (concatenate 'string "jscl.evaluateString(" rcode ")"))))
-     (if reskey
-         (let* ((gwl (gethash-lock reskey *gimme-wait-list*))
-                (sem (cdr (assoc :sem gwl)))
-                (time (cdr (assoc :time gwl))))
-           (setf (gethash-lock reskey *gimme-wait-list*) `((:result . ,res) (:time . ,time)))
-           (signal-semaphore sem)))
      res))
 
 (defun takit (key res)
@@ -776,9 +815,9 @@ const make_conn=()=>{
                               (equal 'defclass (car datp)))
                          (mapcan
                            (lambda (sym)
-                               (let ((cod (gethash-lock sym *exportable-expressions*)))
-                                 (if cod
-                                     (list cod))))
+                             (let ((cod (gethash-lock sym *exportable-expressions*)))
+                               (if cod
+                                   (list cod))))
                            (remove-duplicates
                              (gethash-lock sym *exported-classes-methods*))))))
     (if datp
@@ -788,15 +827,19 @@ const make_conn=()=>{
                            (if (listp sv)
                                `(quote ,sv)
                                sv)))
-                       (if auto-funcs
-                           `(progn ,datp ,@auto-funcs)
-                           datp)))
+                       datp))
               (sem (make-semaphore))
               (key (random-key *gimme-wait-list* |sid-length|)))
           (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
           (push (bt:make-thread
                    (lambda ()
-                      (compile-to-js dat (symbol-package sym) key))
+                     (put-wl-result
+                       (format nil "{~A};~{{~A}~^;~}"
+                         (compile-to-js dat (symbol-package sym))
+                         (mapcar (lambda (f)
+                                   (compile-to-js f (symbol-package sym)))
+                                 auto-funcs))
+                       key))
                    :initial-bindings `((*current-res* . ',key)))
                 *omg-thread-list*)
           (wait-on-semaphore sem)
@@ -813,9 +856,7 @@ const make_conn=()=>{
       (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,(intern "omg-rpc-symbol" pkg))))
       (push (bt:make-thread
               (lambda ()
-                (compile-to-js `(read-from-string ,(write-to-string (apply op args)))
-                               pkg
-                               key))
+                (put-wl-result (compile-to-js `(read-from-string ,(write-to-string (apply op args))) pkg) key))
               :initial-bindings `((*current-res* . ',key)
                                   (*current-session* . ,*current-session*)
                                   (*in-rpc* . t)))
