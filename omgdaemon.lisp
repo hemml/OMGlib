@@ -597,19 +597,25 @@
   (sb-ext:save-lisp-and-die (merge-pathnames (make-pathname :name "omgdaemon"))
                             :executable t :save-runtime-options t :purify t :toplevel #'run-daemon))
 
-(defun make-docker-image (&optional tag)
+(defun make-docker-image (&key (tag 'omgdaemon) (sbcl-version "2.3.1"))
   (with-input-from-string
-    (fd (format nil "~{~A~%~}"
-          `("FROM debian"
-            "RUN apt-get update && apt-get dist-upgrade -y"
-            "RUN apt-get install -y sbcl cl-quicklisp git build-essential"
-            "RUN adduser omg"
-            "RUN su -l omg -c 'sbcl --load \"/usr/share/common-lisp/source/quicklisp/quicklisp.lisp\" --eval \"(quicklisp-quickstart:install)\" --disable-debugger'"
-            "RUN su -l omg -c 'mkdir -p /home/omg/quicklisp/local-projects && cd /home/omg/quicklisp/local-projects && git clone --recurse-submodules https://github.com/hemml/OMGlib.git'"
-            "RUN su -l omg -c 'cd /home/omg && sbcl --eval \"(load \\\"/home/omg/quicklisp/setup.lisp\\\")\" --eval \"(ql:quickload :hunchentoot)\" --eval \"(ql:quickload :omg)\" --eval \"(omgdaemon:make-omg-daemon 8080)\" --disable-debugger'"
-            "EXPOSE 8080 4008"
-            "CMD while true; do su -l omg -c 'cd /home/omg && ./omgdaemon' ; sleep 1 ; done")))
-    (run `(docker build :tag ,(if tag tag 'omgdaemon) :pull :no-cache -) :input fd)))
+    (fd (format nil "FROM debian
+RUN apt-get update && apt-get dist-upgrade -y
+RUN apt-get install -y sbcl cl-quicklisp git build-essential ziproxy libzstd-dev
+RUN cd /root && git clone -b sbcl-~A https://git.code.sf.net/p/sbcl/sbcl sbcl-sbcl &&\\
+    cd sbcl-sbcl && ./make.sh --fancy --prefix=/usr && ./install.sh && cd / &&\\
+    rm -fr /root/sbcl-sbcl
+RUN adduser omg
+RUN su -l omg -c 'ziproxy -d ; sbcl --load \"/usr/share/common-lisp/source/quicklisp/quicklisp.lisp\" \\
+      --eval \"(quicklisp-quickstart:install :proxy \\\"http://127.0.0.1:8080/\\\")\" --non-interactive'
+RUN su -l omg -c 'mkdir -p /home/omg/quicklisp/local-projects && cd /home/omg/quicklisp/local-projects &&\\
+      git clone --recurse-submodules https://github.com/hemml/OMGlib.git'
+RUN su -l omg -c 'ziproxy -d ; cd /home/omg && sbcl --eval \"(load \\\"/home/omg/quicklisp/setup.lisp\\\")\"\\
+      --eval \"(ql:quickload :hunchentoot)\" --eval \"(ql:quickload :omg)\"\\
+      --eval \"(omgdaemon:make-omg-daemon 8081)\" --non-interactive'
+EXPOSE 8081 4008
+CMD ziproxy -d ; while true; do su -l omg -c 'cd /home/omg && ./omgdaemon' ; sleep 1 ; done" sbcl-version))
+    (run `(docker build :tag ,tag :pull :no-cache -) :input fd)))
 
 (defun update-omg ()
   (run '(and (cd "/home/omg/quicklisp/local-projects/OMGlib")

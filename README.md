@@ -539,8 +539,8 @@ The most convinient way to run `omgdaemon` is to put it into a docker container.
 sbcl --eval "(require :omg)" --eval "(omgdaemon::make-docker-image)" --quit
 ```
 
-`(omgdaemon::make-docker-image)` accepts an optional parameter - tag name for the new image. The image can be started in the following way to serve on port `7575` on `localhost`:
+`(omgdaemon::make-docker-image)` accepts two keys - `:tag` for name of the new image (default "omgdaemon") and `:sbcl-version` (default "2.3.1" for now`). The image can be started in the following way to serve on port `7575` on `localhost` and port 4008 for swank-server:
 
 ```
-docker run -d -p 127.0.0.1:7575:8080 -p 127.0.0.1:4008:4008 omgdaemon
+docker run -d -p 127.0.0.1:7575:8081 -p 127.0.0.1:4008:4008 omgdaemon
 ```
