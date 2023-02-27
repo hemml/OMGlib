@@ -1075,7 +1075,9 @@ self.addEventListener('fetch', function(e) {
            `(200 (:content-type "text/html; charset=utf-8") (,(get-root-html))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path*))
                 (getf env :content-length))
-           (let* ((cmd (read-from-string (get-str-from (getf env :raw-body) (getf env :content-length))))
+           (let* ((cmd (read-from-string (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
+                                                           "\\n"
+                                                           (make-string 1 :initial-element #\newline))))
                   (pkg (find-package (car cmd)))
                   (op (intern (symbol-name (cadr cmd)) pkg))
                   (args (caddr cmd))
