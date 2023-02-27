@@ -274,6 +274,32 @@ To make a password input use line `(:mypass "Password" :type "password")`
 
 - `(add-youtube-player element &key onready onstatechange onqualitychange onratechange onerror onapichange width height video-id)` - add YouTube player on the page. The `video-id` is a string with YouTube video ID; `element` must be parent element for the player; `width` and `height` -- player dimensions; `onready`, `onstatechange`, `onqualitychange`, `onratechange`, `onerror` and `onapichange` - the callbacks. See the `example.lisp`.
 
+## Widgets
+
+The OMG library now includes support of CLOS-based widgets (see `omgwidgets.lisp`). The base class is `omg-widget`, which has slot `root` (and accessor `root`) for the root DOM object. Also a `(render-widget (w omg-widget))` and `(redraw (w omg-widget))` methods are provided.
+
+The `render-widget` method must create a root DOM and store it in the `root` slot of the widget. The root DOM must be returned. You have to subclass `omg-widget` and provide your own `render-widget` method.
+
+The `redraw` method can be used to completely rebuild root DOM (by calling `render-widget` method) and replace it on the page. For the most cases you can just use default `redraw` method of `omg-widget` class.
+
+To make a simple widget with static DOM, just use:
+
+```
+(defclass-f my-widget (omg-widget)
+  ((root :initform (create-element "span"
+                     :|style.textDecorationStyle| "dashed"
+                     :|style.textDecorationLine| "underline"
+                     :|style.textDecorationThicknes| "1.75pt"
+                     :|style.color| "blue"
+                     :|title| "change"
+                     :add-style ":hover {cursor:pointer;}"))
+                     :append "TEST WIDGET"
+```
+
+and add it to the page:
+
+`(append-element (render-widget (make-instance 'my-widget)))`
+
 ## Restrictions
 
 - **All browser-side functions must be declared in your own package(s), not in CL-USER.** See [How it works](#how-it-works) for details.

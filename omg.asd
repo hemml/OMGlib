@@ -12,7 +12,8 @@
                (:static-file "LICENSE")
                (:file "omg")
                (:file "omgdaemon" :depends-on ("omg"))
-               (:file "omgui" :depends-on ("omg" "omgdaemon"))))
+               (:file "omgui" :depends-on ("omg" "omgdaemon"))
+               (:file "omgwidgets" :depends-on ("omg" "omgui"))))
 
 (defparameter *jscl-dir* (merge-pathnames (make-pathname :directory '(:relative "jscl"))
                                           (asdf:system-source-directory :omg)))
