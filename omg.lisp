@@ -1052,7 +1052,8 @@ self.addEventListener('fetch', function(e) {
                              '(404 (:content-type "text/plain") ("File not found"))))
 
 (defun serv (env)
-  (let ((uri (getf env :REQUEST-URI)))
+  (let ((uri (getf env :REQUEST-URI))
+        (*read-eval* nil))
     (cond ((equal uri (concatenate 'string *root-path* *pwa-path* "/manifest.json"))
            (if *pwa-mainfest*
                `(200 (:content-type "application/json; charset=utf-8") (,*pwa-mainfest*))
