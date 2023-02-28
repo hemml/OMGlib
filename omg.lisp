@@ -629,8 +629,8 @@ const make_conn=()=>{
     root_ws.close()
   }
   root_ws.onmessage=function (ev) {
-    //console.log('Message received: '+ev.data)
-    eval(ev.data)
+    const cmd=ev.data;
+    setTimeout(()=>{eval(cmd)},1)
   }
 }
 
