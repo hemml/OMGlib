@@ -75,7 +75,7 @@
 (in-package :omgui)
 
 (defun-f winref (name)
-  (jscl::oget (jscl::%js-vref "window") name))
+  (jscl::oget (jscl::%js-vref "self") name))
 
 (defun-f js-parse-float (s)
   (funcall (winref "parseFloat") (jscl::lisp-to-js s)))
@@ -607,7 +607,7 @@
     (append-element el)))
 
 (defun-f make-js-function (name code)
-  (setf (jscl::oget (jscl::%js-vref "window") name) code))
+  (setf (jscl::oget (jscl::%js-vref "self") name) code))
 
 (defun-f make-js-object (&rest plist)
   (let ((obj (jscl::new)))
@@ -628,10 +628,10 @@
     (progn
       ((jscl::oget
          (jscl::%js-vref "history")
-         "pushState") "" "" (jscl::oget (jscl::%js-vref "window") "location" "href"))
+         "pushState") "" "" (jscl::oget (jscl::%js-vref "self") "location" "href"))
       ((jscl::oget (jscl::%js-vref "history") "back"))
       (setf *onpopstate-installed* t)
-      (setf (jscl::oget (jscl::%js-vref "window") "onpopstate")
+      (setf (jscl::oget (jscl::%js-vref "self") "onpopstate")
             (lambda (ev)
               (let ((bcnt *backcnt*) ;; JSCL bug workaround
                     (fb *fback*))
@@ -658,7 +658,7 @@
   (if (not *beforeunload-installed*)
     (progn
       ((jscl::oget
-          (jscl::%js-vref "window")
+          (jscl::%js-vref "self")
           "addEventListener") "beforeunload"
                               (lambda (ev)
                                 (if *disable-page-unload*
@@ -719,7 +719,7 @@
       (push (cons hsh cb) *hash-change-cbs*)
       (if need-mcb
           (progn
-            (setf (jscl::oget (jscl::%js-vref "window") "onhashchange")
+            (setf (jscl::oget (jscl::%js-vref "self") "onhashchange")
                   #'mcb)
             (mcb)))))
   nil)
@@ -915,7 +915,7 @@
   (let ((handlers (assoc path *global-event-handlers*  :test #'equal)))
     (if (not handlers)
         (let* ((path-l (omgui::js-string-split path #\.))
-               (obj (omgui::deep-oget-1 (jscl::%js-vref "window") (butlast path-l))))
+               (obj (omgui::deep-oget-1 (jscl::%js-vref "self") (butlast path-l))))
           (setf (jscl::oget obj (car (last path-l)))
                 (lambda (ev)
                   (map nil
