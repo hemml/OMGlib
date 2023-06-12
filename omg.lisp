@@ -125,7 +125,7 @@
   (setf (gethash-lock name *rpc-functions*) t)
   (setf (gethash-lock name *exportable-expressions*)
        `(defun ,name (&rest argl)
-          (funcall (jscl::oget (jscl::%js-vref "jscl") "omgRPC")
+          (funcall (jscl::oget (jscl::%js-vref "self") "OMG" "RPC")
                    (write-to-string (list ,(package-name *package*)
                                           ',name
                                           argl
@@ -399,36 +399,39 @@
 (defun get-main-js ()
   "Return the JS code, including JSCL and OMG parts glued."
   (concatenate 'string "(()=>{" jscl::*jscl-js* "
-const omgURL=new URL(document.currentScript.src)
-const omgPath=omgURL.pathname.replace(/\\/[^\\\/]+$/,'')
-const omgHostPath=(omgURL.username?(omgURL.username+
-                                  (omgURL.password?(':'+omgURL.password):'')+'@'):'')+
-                  omgURL.host+
-                  omgPath
-const omgBase=omgURL.protocol+'//'+omgHostPath
-const omgWS='" (if (use-wss-p) "wss://" "ws://") "'+omgHostPath+'" *root-path* *ws-path* "'
+
+var OMG = Object.create(null)
+self.OMG=OMG
+
+OMG.URL=new URL(document.currentScript.src)
+OMG.Path=OMG.URL.pathname.replace(/\\/[^\\\/]+$/,'')
+OMG.HostPath=(OMG.URL.username?(OMG.URL.username+
+                                 (OMG.URL.password?(':'+OMG.URL.password):'')+'@'):'')+
+                               OMG.URL.host+
+                               OMG.Path
+OMG.Base=OMG.URL.protocol+'//'+OMG.HostPath
+OMG.WS='" (if (use-wss-p) "wss://" "ws://") "'+OMG.HostPath+'" *root-path* *ws-path* "'
 
 jscl.packages['COMMON-LISP-USER'] = jscl.packages.CL;
 
-const random_key=(()=>{
+OMG.random_key=(()=>{
   const achars=Array(26).fill(0).reduce((...args)=>{args[0].push(String.fromCharCode('A'.charCodeAt(0)+args[2]));return args[0]},[])
   return (len)=>{
     return Array(len).fill().map(()=>{return achars[Math.floor(Math.random()*achars.length)]}).join('')
   }})()
 
-let root_ws=undefined
+OMG.root_ws=undefined
+OMG.InFetch={}
 
-const omgInFetch={}
-
-const omgOriginalSymbolValue=jscl.internals.symbolValue
+OMG.OriginalSymbolValue=jscl.internals.symbolValue
 jscl.internals.symbolValue=(symbol)=>{
   if(symbol.package) {
     const full_name=symbol.package.packageName+':'+symbol.name
-    if(symbol.value===undefined&&symbol.package.omgPkg&&!omgInFetch[full_name]) {
+    if(symbol.value===undefined&&symbol.package.omgPkg&&!OMG.InFetch[full_name]) {
       //console.log('SYMVALUE FETCH:', full_name)
-      omgInFetch[full_name]=true
+      OMG.InFetch[full_name]=true
       let xhr=new XMLHttpRequest()
-      xhr.open('POST', omgBase+'" *root-path* *gimme-path* "', false)
+      xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
       xhr.send(full_name)
       if (xhr.status === 200) {
         eval(xhr.response)
@@ -437,25 +440,25 @@ jscl.internals.symbolValue=(symbol)=>{
       }
     }
   }
-  return omgOriginalSymbolValue(symbol)
+  return OMG.OriginalSymbolValue(symbol)
 }
 
-const omgOriginalIntern=jscl.internals.intern
+OMG.OriginalIntern=jscl.internals.intern
 
-const omgFetch=(sym)=>{
+OMG.Fetch=(sym)=>{
   const full_name=sym.package.packageName+':'+sym.name
   //console.log('FVALUE FETCH:',full_name)
-  if(!omgInFetch[full_name]) {
-    omgInFetch[full_name]=true
+  if(!OMG.InFetch[full_name]) {
+    OMG.InFetch[full_name]=true
     let xhr=new XMLHttpRequest()
-    xhr.open('POST', omgBase+'" *root-path* *gimme-path* "', false)
+    xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
     xhr.send(full_name)
     if (xhr.status === 200) {
       //console.log(xhr.response)
       eval(xhr.response)
-      omgInFetch[full_name]=false
+      OMG.InFetch[full_name]=false
     } else {
-      omgInFetch[full_name]=false
+      OMG.InFetch[full_name]=false
       throw new Error('Cannot fetch symbol '+sym.package.packageName+'::'+sym.name)
     }
   } else {
@@ -463,43 +466,43 @@ const omgFetch=(sym)=>{
   }
 }
 
-const omgFetchFvalue=(sym)=>{
+OMG.FetchFvalue=(sym)=>{
   let isFetched=false
   return (...args)=>{
     if(isFetched) return sym.fvalue.apply(null,args)
-    omgFetch(sym)
+    OMG.Fetch(sym)
     isFetched=true
     sym.fvalue=sym.package.symbols[sym.name].fvalue
     return sym.fvalue.apply(null,args)
   }
 }
 
-let omgInMakePackage=false
-const omgMakePackage=(package_name)=>{
-  if(!omgInMakePackage) {
-    omgInMakePackage=true
+OMG.InMakePackage=false
+OMG.MakePackage=(package_name)=>{
+  if(!OMG.InMakePackage) {
+    OMG.InMakePackage=true
     jscl.evaluateString('(DEFPACKAGE :'+package_name+' (:USE :CL :JSCL))')
-    omgInMakePackage=false
+    OMG.InMakePackage=false
     jscl.packages[package_name].omgPkg=true
   }
 }
 
 jscl.internals.intern=(name, package_name)=>{
   if(package_name && !(package_name in jscl.packages)) {
-    omgMakePackage(package_name)
+    OMG.MakePackage(package_name)
   }
-  let sym=omgOriginalIntern(name, package_name)
+  let sym=OMG.OriginalIntern(name, package_name)
   const full_name=package_name+':'+name
   if('package' in sym&&sym.package.omgPkg&&sym.value===undefined&&
-     !jscl.internals.fboundp(sym)&&!omgInFetch[full_name]) {
-    sym.fvalue=omgFetchFvalue(sym)
+     !jscl.internals.fboundp(sym)&&!OMG.InFetch[full_name]) {
+    sym.fvalue=OMG.FetchFvalue(sym)
   }
   return sym
 }
 
-jscl.omgRPC=(cmd)=>{
+OMG.RPC=(cmd)=>{
   let xhr=new XMLHttpRequest()
-  xhr.open('POST', omgBase+'" *root-path* *rpc-path* "', false)
+  xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', false)
   xhr.send(cmd)
   if (xhr.status === 200) {
     return eval(xhr.response)
@@ -508,9 +511,9 @@ jscl.omgRPC=(cmd)=>{
   }
 }
 
-jscl.omgAsyncRPC=(cmd, cb)=>{
+OMG.AsyncRPC=(cmd, cb)=>{
   let xhr=new XMLHttpRequest()
-  xhr.open('POST', omgBase+'" *root-path* *rpc-path* "', true)
+  xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', true)
   xhr.onload=function (e) {
     if (xhr.readyState === 4) {
       if (xhr.status === 200) {
@@ -526,37 +529,35 @@ jscl.omgAsyncRPC=(cmd, cb)=>{
   xhr.send(cmd)
 }
 
-
-
-const omgOriginalFP=jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue
+OMG.OriginalFP=jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue
 jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue=(values,pkg)=>{
-  let res=omgOriginalFP(values,pkg)
-  if(!omgInMakePackage&&typeof(pkg)==='object'&&typeof(res)==='object'&&res.name==='NIL'&&res.package.packageName==='CL') {
-    omgMakePackage(pkg.name)
-    res=omgOriginalFP(values,pkg)
+  let res=OMG.OriginalFP(values,pkg)
+  if(!OMG.InMakePackage&&typeof(pkg)==='object'&&typeof(res)==='object'&&res.name==='NIL'&&res.package.packageName==='CL') {
+    OMG.MakePackage(pkg.name)
+    res=OMG.OriginalFP(values,pkg)
   }
   return res
 }
 
-const omgOriginalLIL=jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue
+OMG.OriginalLIL=jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue
 jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue=(mv,name,lexenv,ns)=>{
-  let res=omgOriginalLIL(mv,name,lexenv,ns)
+  let res=OMG.OriginalLIL(mv,name,lexenv,ns)
   if(ns.name==='FUNCTION' && 'package' in name && name.package.omgPkg && 'name' in res && res.name==='NIL') {
-    omgFetch(name)
-    res=omgOriginalLIL(mv,name,lexenv,ns)
+    OMG.Fetch(name)
+    res=OMG.OriginalLIL(mv,name,lexenv,ns)
   }
   return res
 }
 
-const omgOriginalGSE=jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue
+OMG.OriginalGSE=jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue
 jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
   const set_name = '(SETF_'+fn.car.name+')'
   if('car' in fn && 'name' in fn.car && 'package' in fn.car && fn.car.package.omgPkg && !(set_name in fn.car.package.symbols)) {
     //console.log('NEED FETCH:',set_name, fn.car.package.packageName)
     const full_name=fn.car.package.packageName+':'+set_name
-    omgInFetch[full_name]=true
+    OMG.InFetch[full_name]=true
     let xhr=new XMLHttpRequest()
-    xhr.open('POST', omgBase+'" *root-path* *gimme-path* "', false)
+    xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
     xhr.send(full_name)
     if (xhr.status === 200) {
       eval(xhr.response)
@@ -564,42 +565,42 @@ jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
       throw new Error('Cannot fetch set symbol '+fn.car.package.packageName+'::'+set_name)
     }
   }
-  return omgOriginalGSE(mv,fn)
+  return OMG.OriginalGSE(mv,fn)
 }
 
-const omgOriginalCAMUC=jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue
+OMG.OriginalCAMUC=jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue
 jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue=(mv,gf,clss)=>{
-  let res=omgOriginalCAMUC(mv,gf,clss)
+  let res=OMG.OriginalCAMUC(mv,gf,clss)
   if ('name' in res && res.name=='NIL') {
-    omgFetch(gf.cdr.cdr.car[0])
-    res=omgOriginalCAMUC(mv,gf,clss)
+    OMG.Fetch(gf.cdr.cdr.car[0])
+    res=OMG.OriginalCAMUC(mv,gf,clss)
   }
   return res
 }
 
-const omgOriginalFC=jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue
+OMG.OriginalFC=jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue
 jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
   if('package' in cls && cls.package.omgPkg &&
      !cls.package.symbols[cls.name].omgClass) {
     cls.package.symbols[cls.name].omgClass=true
-    omgFetch(cls)
+    OMG.Fetch(cls)
   }
-  return omgOriginalFC(mv,cls,arg2)
+  return OMG.OriginalFC(mv,cls,arg2)
 }
 
-const omgOriginalFC1=jscl.packages.CL.symbols['FIND-CLASS'].fvalue
+OMG.OriginalFC1=jscl.packages.CL.symbols['FIND-CLASS'].fvalue
 jscl.packages.CL.symbols['FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
   if('package' in cls && cls.package.omgPkg &&
      !cls.package.symbols[cls.name].omgClass) {
     cls.package.symbols[cls.name].omgClass=true
-    omgFetch(cls)
+    OMG.Fetch(cls)
   }
-  return omgOriginalFC1(mv,cls,arg2)
+  return OMG.OriginalFC1(mv,cls,arg2)
 }
 
 
 /*
-const omgOriginalCO=jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue
+OMG.OriginalCO=jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue
 jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue=(mv,cls)=>{
   if('name' in cls) {
     console.log('CO:',cls.name,cls)
@@ -608,27 +609,27 @@ jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue=(mv,cls)=>{
      !cls.package.symbols[cls.name].omgClass) {
     cls.package.symbols[cls.name].omgClass=true
     console.log('COF:', cls.name)
-    omgFetch(cls)
+    OMG.Fetch(cls)
     console.log('COF OK:', cls.name)
   }
-  return omgOriginalCO(mv,cls)
+  return OMG.OriginalCO(mv,cls)
 }
 */
 
-const make_conn=()=>{
+OMG.make_conn=()=>{
   console.log('Connecting to host')
-  root_ws=new WebSocket(omgWS)
-  root_ws.onopen=()=>{console.log('Socket connected')}
-  root_ws.onclose=(ev)=>{
+  OMG.root_ws=new WebSocket(OMG.WS)
+  OMG.root_ws.onopen=()=>{console.log('Socket connected')}
+  OMG.root_ws.onclose=(ev)=>{
     console.log('Socket closed ('+(ev.wasClean?'normally':'by error')+'), reconnecting')
-    delete(root_ws)
-    setTimeout(make_conn,1000)
+    delete(OMG.root_ws)
+    setTimeout(OMG.make_conn,1000)
   }
-  root_ws.onerror=(err)=>{
+  OMG.root_ws.onerror=(err)=>{
     console.log('Socket error ('+err.message+')')
-    root_ws.close()
+    OMG.root_ws.close()
   }
-  root_ws.onmessage=function (ev) {
+  OMG.root_ws.onmessage=function (ev) {
     const cmd=ev.data;
     setTimeout(()=>{eval(cmd)},1)
   }
@@ -641,10 +642,10 @@ const make_conn=()=>{
     });}")
       "")
     "if(document.readyState==='complete') {
-  make_conn()
+  OMG.make_conn()
 } else {
   document.addEventListener('DOMContentLoaded',()=>{
-    make_conn()
+    OMG.make_conn()
   })
 }})()
 "))
@@ -711,8 +712,8 @@ const make_conn=()=>{
        (let* ((sym-name (symbol-name sym))
               (sym-pkg (package-name (symbol-package sym)))
               (cmd (format nil "if(\"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"].symbols) {
-            delete(omgInFetch[\"~A:~A\"])
-            jscl.packages[\"~A\"].symbols[\"~A\"].fvalue=omgFetchFvalue(omgOriginalIntern(\"~A\", \"~A\"))
+            delete(OMG.InFetch[\"~A:~A\"])
+            jscl.packages[\"~A\"].symbols[\"~A\"].fvalue=OMG.FetchFvalue(OMG.OriginalIntern(\"~A\", \"~A\"))
             jscl.packages[\"~A\"].symbols[\"~A\"].value=undefined}"
                                 sym-pkg sym-name sym-pkg sym-pkg sym-name sym-pkg sym-name sym-name sym-pkg sym-pkg sym-name)))
          (send-text (socket s) cmd))))
@@ -723,8 +724,8 @@ const make_conn=()=>{
               (cls-pkg (package-name (symbol-package cls)))
               (cmd (format nil "if(\"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"].symbols &&
                                    \"omgClass\" in jscl.packages[\"~A\"].symbols[\"~A\"]) {
-            delete(omgInFetch[\"~A:~A\"])
-            omgFetch(jscl.packages[\"~A\"].symbols[\"~A\"])}"
+            delete(OMG.InFetch[\"~A:~A\"])
+            OMG.Fetch(jscl.packages[\"~A\"].symbols[\"~A\"])}"
                                 cls-pkg cls-name cls-pkg cls-pkg cls-name
                                 cls-pkg cls-name
                                 cls-pkg cls-name)))
@@ -740,7 +741,7 @@ const make_conn=()=>{
                          (format nil "if(\"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"].symbols &&
                                          \"omgClass\" in jscl.packages[\"~A\"].symbols[\"~A\"] &&
                                          \"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"].symbols) {
-                                       omgFetch(jscl.packages[\"~A\"].symbols[\"~A\"])
+                                       OMG.Fetch(jscl.packages[\"~A\"].symbols[\"~A\"])
                                      }"
                            cls-pkg cls-name cls-pkg
                            cls-pkg cls-name
@@ -1028,7 +1029,10 @@ const make_conn=()=>{
     (utf-8-bytes-to-string tseq)))
 
 (defvar *pwa-sw-js* "
-const bc = new BroadcastChannel('omg_service_worker');
+if(OMG===undefined) {
+  var OMG={}
+}
+OMG.bc = new BroadcastChannel('omg_service_worker');
 
 self.addEventListener('install', function(e) {
   console.log('Install event!')
@@ -1042,7 +1046,7 @@ self.addEventListener('activate', function(e) {
 
 self.addEventListener('fetch', function(e) {
   console.log('Fetch event:', e.request.url)
-  bc.postMessage({type:'fetch', uri:e.request.url})
+  OMG.bc.postMessage({type:'fetch', uri:e.request.url})
   return fetch(e.request.clone())
 })
 ")
