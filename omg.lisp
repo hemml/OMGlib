@@ -935,7 +935,7 @@ OMG.make_conn=()=>{
                                       (format nil "~A;~A;"
                                           pkg-hook
                                           rcmd)
-                                      (format nil "~A;root_ws.send((\"~~~A\"+~A));"
+                                      (format nil "~A;OMG.root_ws.send((\"~~~A\"+~A));"
                                           pkg-hook
                                           (symbol-name key)
                                           rcmd))))
