@@ -796,7 +796,7 @@ OMG.make_conn=()=>{
 (defun takit (key res)
   "The handler for takit-requests. This requests are used to return macro expansion results from browser-side"
   (let* ((sem-dat-sym (gethash-lock key *takit-wait-list*)))
-    (if sem-dat-sym
+    (if (and sem-dat-sym (assoc :sem sem-dat-sym))
       (let ((newsem (make-semaphore)))
         (setf (gethash-lock key *takit-wait-list*)
               (let ((*package* (symbol-package (cdr (assoc :symbol sem-dat-sym))))
