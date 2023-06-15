@@ -873,26 +873,27 @@ OMG.make_conn=()=>{
    Called by JSCL compiler while compling lisp code to JS. We have to execute macros on the
    browser-side, because all side-effects, produced by macros, must have a place in the browser."
   (if *current-res*
-      (let* ((sem-tim-sym (gethash-lock *current-res* *gimme-wait-list*))
+      (let* ((cur-res *current-res*)
+             (sem-tim-sym (gethash-lock cur-res *gimme-wait-list*))
              (sem (cdr (assoc :sem sem-tim-sym)))
              (sym (cdr (assoc :symbol sem-tim-sym)))
              (takit-sem (make-semaphore))
              (mcod (compile-to-js
                       `(write-to-string (apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))
                        (symbol-package sym))))
-        (setf (gethash-lock *current-res* *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
-        (setf (gethash-lock *current-res* *gimme-wait-list*)
+        (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
+        (setf (gethash-lock cur-res *gimme-wait-list*)
               `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
                                                              "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
                                                              "{throw new Error('Cannot fetch symbol (takit fails).');}")
-                                        (symbol-name *current-res*)
+                                        (symbol-name cur-res)
                                         mcod))
                 (assoc :time sem-tim-sym)))
         (signal-semaphore sem)
         (wait-on-semaphore takit-sem)
-        (let ((macro-res (cdr (assoc :result (gethash-lock *current-res* *takit-wait-list*)))))
-          (remhash *current-res* *takit-wait-list*)
-          (unintern *current-res*)
+        (let ((macro-res (cdr (assoc :result (gethash-lock cur-res *takit-wait-list*)))))
+          (remhash cur-res *takit-wait-list*)
+          (unintern cur-res)
           macro-res))
       (remote-exec `(apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))))
 
@@ -903,23 +904,24 @@ OMG.make_conn=()=>{
    values are returned as a list. If the nowait is T, the function will retrurn NIL immediately, without waiting
    result from the remote side."
   (if *in-rpc*
-    (let* ((sem-tim-sym (gethash-lock *current-res* *gimme-wait-list*))
+    (let* ((cur-res *current-res*)
+           (sem-tim-sym (gethash-lock *current-res* *gimme-wait-list*))
            (sem (cdr (assoc :sem sem-tim-sym)))
            (takit-sem (make-semaphore))
            (mcod (compile-to-js `(write-to-string ,cmd) *package*)))
-      (setf (gethash-lock *current-res* *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-tim-sym)))
-      (setf (gethash-lock *current-res* *gimme-wait-list*)
+      (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-tim-sym)))
+      (setf (gethash-lock cur-res *gimme-wait-list*)
             `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
                                                            "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
                                                            "{throw new Error('Cannot fetch symbol (takit fails).');}")
-                                      (symbol-name *current-res*)
+                                      (symbol-name cur-res)
                                       mcod))
               ,(assoc :time sem-tim-sym)))
       (signal-semaphore sem)
       (wait-on-semaphore takit-sem)
-      (let ((res (cdr (assoc :result (gethash-lock *current-res* *takit-wait-list*)))))
-        (remhash *current-res* *takit-wait-list*)
-        (unintern *current-res*)
+      (let ((res (cdr (assoc :result (gethash-lock cur-res *takit-wait-list*)))))
+        (remhash cur-res *takit-wait-list*)
+        (unintern cur-res)
         res))
     (flet ((exec () (let* ((wlist (wait-list *current-session*))
                            (sock (socket *current-session*))
