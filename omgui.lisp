@@ -53,6 +53,7 @@
            make-dragabble-list
            make-js-function
            make-js-object
+           make-pwa
            make-svg
            make-tab-form
            modal-dialog
@@ -70,9 +71,16 @@
            visible-height
            visible-left
            visible-top
-           winref))
+           winref
+           set-service-worker-uri-handler
+           respond-with
+           default-action
+           uri-path))
+
 
 (in-package :omgui)
+
+(defvar *default-icon* nil)
 
 (defun-f winref (name)
   (jscl::oget (jscl::%js-vref "self") name))
@@ -1255,3 +1263,191 @@
 
 (defun-f dragabble-list-insert (inner el &optional pos)
   (funcall (jscl::oget inner "omg-insert-fn") el (if pos pos (dragabble-list-insert-position inner))))
+
+
+(defvar-f *worker-cache* nil)
+
+(defparameter-f *current-service-worker* nil)
+
+(defun-r get-js-path ()
+  (format nil "~A~A" omg::*root-path* omg::*js-path*))
+
+(defun-r get-sw-path ()
+  (format nil "~A~A" omg::*root-path* omg::*service-worker-path*))
+
+(defun-r get-root-path ()
+  omg::*root-path*)
+
+(defclass-f webworker ()
+  ((worker :accessor worker)
+   (loaded :initform nil
+           :accessor loaded)
+   (msg-handler :accessor msg-handler)))
+
+(defclass-f classic-worker (webworker)
+  ((busy :accessor busy
+         :initform nil)))
+
+(defclass-f service-worker (webworker)
+  ())
+
+(defmethod-f msg ((ww webworker) data &optional (try-count 20))
+  (if (loaded ww)
+      ((jscl::oget (worker ww) "postMessage") data)
+      (if (> try-count 0)
+          (execute-after 0.5
+            (lambda ()
+              (msg ww data (- try-count 1))))
+          (jslog "Cannot send message to the worker, it is not loaded!"))))
+
+(defmethod-f initialize-instance :after ((ww webworker) &key &allow-other-keys)
+  (msg ww (format nil "self.OMG.Base='~A'" (jscl::oget (winref "self") "OMG" "Base"))))
+
+(defmethod-f initialize-instance :after ((ww service-worker) &key &allow-other-keys)
+  ((jscl::oget
+     ((jscl::oget (winref "navigator") "serviceWorker" "register") (get-sw-path) (make-js-object :|scope| (get-root-path)))
+     "then") (lambda (reg)
+               ((jscl::oget reg "update"))
+               (setf (jscl::oget (winref "navigator") "serviceWorker" "oncontrollerchange")
+                     (lambda (ev)
+                       (jslog "Controller changed!")
+                       (setf *current-service-worker* ww)
+                       (setf (slot-value ww 'loaded) t)
+                       (setf (slot-value ww 'worker) (jscl::oget (winref "navigator") "serviceWorker" "controller")))))))
+
+(defmethod-f initialize-instance :after ((ww classic-worker) &key &allow-other-keys)
+  (setf (slot-value ww 'worker) (jscl::make-new (winref "WebWorker") (get-js-path)))
+  (push ww *worker-cache*))
+
+(defmethod-f kill ((ww webworker) &optional (try-count 20))
+  ((jscl::oget (worker ww) "terminate"))
+  (setf *worker-cache* (remove-if (lambda (w) (equal w ww)) *worker-cache*)))
+
+(defmethod-f kill ((ww service-worker) &optional (try-count 20))
+  (if *current-service-worker*
+      ((jscl::oget ((jscl::oget (jscl::%js-vref "navigator") "serviceWorker" "getRegistration") (get-root-path)) "then")
+       (lambda (reg)
+         ((jscl::oget reg "unregister"))
+         (setf *current-service-worker* nil)))
+      (if (> try-count 0)
+          (execute-after 0.5
+            (lambda ()
+              (kill ww (- try-count 1))))
+          (jslog "Service Worker not spawned yet, cannot kill")))
+  nil)
+
+(defmacro run-in-worker (w &rest code)
+  (let ((js (gensym)))
+    `(let ((,js (omg::compile-to-js ',code ,*package*)))
+       (remote-exec '(msg ,w ,js)))))
+
+(defmacro-f in-service-worker (&rest code)
+  (let ((js (gensym2))
+        (fn (gensym2)))
+    `(let ((,js (jscl::with-compilation-environment (jscl::compile-toplevel '(progn ,@code nil) t t))))
+       (if *current-service-worker*
+           (msg *current-service-worker* ,js)
+           (labels ((,fn ()
+                      (if *current-service-worker*
+                          (msg *current-service-worker* ,js)
+                          (execute-after 0.2 #',fn))))
+             (make-instance 'service-worker)
+             (,fn)))
+       nil)))
+
+(defmacro-f set-service-worker-uri-handler (uri-req-event &rest code)
+  (let ((ev (gensym2))
+        (opts (gensym2))
+        (body (gensym2))
+        (options (gensym2))
+        (args (gensym2))
+        (uri (gensym2))
+        (old-handler (gensym2))
+        (unused-args (list (gensym2) (gensym2) (gensym2))))
+    `(in-service-worker
+       (let ((,old-handler (jscl::oget (jscl::%js-vref "self") "OMG" "fetchHandler")))
+         (setf (jscl::oget (jscl::%js-vref "self") "OMG" "fetchHandler")
+               (lambda (,ev)
+                 (apply (lambda (,@uri-req-event &optional ,@unused-args)
+                          (labels ((respond-with (&optional ,body ,options)
+                                     (let ((,opts (jscl::new)))
+                                       (loop for (k v) on ,options by #'cddr do (setf (jscl::oget obj (symbol-name k)) v))
+                                       ((jscl::oget ,ev "respondWith")
+                                        (jscl::make-new (jscl::%js-vref "Response")
+                                                        ,body
+                                                        ,opts))))
+                                   (jslog (&rest ,args)
+                                     (apply (jscl::oget (jscl::%js-vref "self") "console" "log") ,args))
+                                   (default-action ()
+                                     (funcall ,old-handler ,ev))
+                                   (uri-path (,uri)
+                                     (jscl::oget (jscl::make-new (jscl::oget (jscl::%js-vref "self") "URL")
+                                                                 (jscl::lisp-to-js ,uri))
+                                                 "pathname")))
+                            ,@code))
+                        (list (jscl::oget ,ev "request" "url")
+                              (jscl::oget ,ev "request")
+                              ,ev))))))))
+
+(defvar-f *pwa-mode* nil)
+
+(defun make-pwa (&key (name "Application")
+                      (short-name "app")
+                      (display "standalone")
+                      (theme-color "#000000")
+                      (background-color "#ffffff")
+                      icon-path)
+  (setf *pwa-mode* t)
+  (let* ((manifest-path (format nil "~A.json" (omg::random-string 20)))
+         (icon-path (if icon-path
+                        (if (equal (type-of icon-path) 'pathname)
+                            icon-path
+                            (parse-namestring icon-path))))
+         (icon-ext (if icon-path
+                       (pathname-type icon-path)
+                       "png"))
+         (icon-type (media-types:extension-media-type icon-ext))
+         (icon-size (if icon-path
+                        (cond ((equal icon-type "image/png")
+                               (let ((png (pngload:load-file icon-path :decode nil)))
+                                 (format nil "~Ax~A" (pngload:get-metadata png :width)
+                                                     (pngload:get-metadata png :height))))
+                              ((equal icon-type "image/jpeg")
+                               (multiple-value-bind (h w ncomp trans) (cl-jpeg:jpeg-file-dimensions icon-path)
+                                 (declare (ignore ncomp))
+                                 (declare (ignore trans))
+                                 (format nil "~Ax~A" w h)))
+                              ((equal icon-type "image/gif")
+                               (let ((gif (skippy:load-data-stream icon-path)))
+                                 (format nil "~Ax~A" (skippy:width gif) (skippy:height gif))))
+                              (t (error (format nil "Unsupported icon format: ~A" icon-type))))
+                        "512x512"))
+         (icon-url-path (format nil "~A.~A" (omg::random-string 20) icon-ext)))
+    (add-serve-path manifest-path
+                    `(200 (:content-type "text/javascript; charset=utf-8")
+                          (,(format nil "{\"name\":\"~A\",\"short_name\":\"~A\",\"display\":\"~A\",\"start_url\":\"~A/\",\"theme_color\":\"~A\",\"background_color\":\"~A\",\"icons\"\: [{\"src\": \"~A~A\",\"sizes\": \"~A\",\"type\": \"~A\"}]}"
+                                    name short-name display omg::*root-path* theme-color background-color
+                                    omg::*root-path* icon-url-path icon-size icon-type))))
+    (add-serve-path icon-url-path
+                    `(200 (:content-type ,icon-type)
+                          ,(if icon-path
+                               icon-path
+                               *default-icon*)))
+    (add-to-root-html-head
+      (format nil "
+        <title>~A</title>
+        <meta name=\"viewport\" content=\"width=device-width, user-scalable=no\"/>
+        <link rel=\"manifest\" href=\"~A~A\" />
+      " name omg::*root-path* manifest-path))
+    (add-to-root-html-head
+      (format nil "<link rel=\"icon\" href=\"~A~A\" type=\"~A\" />"
+              omg::*root-path* icon-url-path
+              icon-type))
+    (pushnew '(make-instance 'service-worker) omg::*pre-boot-functions*)))
+
+(eval-when (:compile-toplevel)
+  (with-open-file (fd (merge-pathnames (make-pathname :name "default_icon.png")
+                                       (asdf:system-source-directory :omg))
+                      :element-type '(unsigned-byte 8))
+    (setf *default-icon* (make-array `(,(file-length fd)) :element-type '(unsigned-byte 8)))
+    (read-sequence *default-icon* fd)))

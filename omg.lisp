@@ -28,7 +28,6 @@
            current-session-id  ;; get ID of current session (returns NIL if no session)
            set-debug-session  ;; mark current session as "debug"
            in-debug-session ;; execute code in debug session
-           make-pwa       ;; serve web page as a Progressive Web App
            thread-in-session)) ;; spawn thread in current session
 
 (in-package :omg)
@@ -47,6 +46,7 @@
 (defvar *rpc-path* "r") ;; rpc call path (relative to *root-path*)
 (defvar *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
 (defvar *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
+(defvar *service-worker-path* "w") ;; path to the service worker code
 (defvar *port* 7500) ;; default server port
 
 (defvar *use-wss* nil) ;; if T -- use wss:// protocol for websocket
@@ -325,52 +325,6 @@
 (make-var-macro-f defconstant)  ;; defconstant-f
 
 (defvar *extra-html* "")
-
-(defvar *pwa-mainfest* nil)
-(defvar *pwa-icon* nil)
-(defvar *pwa-path* "pwa")
-(defvar *pwa-icon-file* nil)
-(defvar *pwa-icon-type* nil)
-(defvar *pwa-name* nil)
-(defvar *pwa-sw-js-name* nil)
-
-(defun make-pwa (&key (name "Application")
-                      (short-name "app")
-                      (display "standalone")
-                      (theme-color "#000000")
-                      (background-color "#ffffff")
-                      icon-path)
-  (setf *pwa-name* name)
-  (setf *pwa-sw-js-name* (format nil "~A/pwa-sw-~A.js" (string-right-trim '(#\/) *root-path*) (random-string 10)))
-  (setf *pwa-mainfest* (format nil "{
-\"name\":\"~A\",\"short_name\":\"~A\",\"display\":\"~A\",\"start_url\":\"~A/\",\"theme_color\":\"~A\",\"background_color\":\"~A\"~A}"
-                         name short-name display *root-path* theme-color background-color
-                         (if icon-path
-                             (let* ((path (if (equal (type-of icon-path) 'pathname)
-                                              icon-path
-                                              (parse-namestring icon-path)))
-                                    (typ (media-types:extension-media-type (pathname-type path)))
-                                    (size (cond ((equal typ "image/png")
-                                                 (let ((png (pngload:load-file path :decode nil)))
-                                                   (format nil "~Ax~A" (pngload:get-metadata png :width)
-                                                                       (pngload:get-metadata png :height))))
-                                                ((equal typ "image/jpeg")
-                                                 (multiple-value-bind (h w ncomp trans) (cl-jpeg:jpeg-file-dimensions path)
-                                                   (declare (ignore ncomp))
-                                                   (declare (ignore trans))
-                                                   (format nil "~Ax~A" w h)))
-                                                ((equal typ "image/gif")
-                                                 (let ((gif (skippy:load-data-stream path)))
-                                                   (format nil "~Ax~A" (skippy:width gif) (skippy:height gif))))
-                                                (t (error (format nil "Unsupported icon format: ~A" typ))))))
-                               (setf *pwa-icon* (format nil "~A/~A/~A" (string-right-trim '(#\/) *root-path*) *pwa-path* (file-namestring path)))
-                               (setf *pwa-icon-file* path)
-                               (setf *pwa-icon-type* typ)
-                               (format nil ",\"icons\"\: [{\"src\": \"~A\",\"sizes\": \"~A\",\"type\": \"~A\"}]"
-                                           *pwa-icon*
-                                           size
-                                           typ))
-                             ""))))
 (defvar *extra-head* "")
 
 (defun get-root-html ()
@@ -397,37 +351,163 @@
 
 (defun get-main-js ()
   "Return the JS code, including JSCL and OMG parts glued."
-  (concatenate 'string "(()=>{" jscl::*jscl-js* "
-
+  (concatenate 'string "(()=>{" jscl::*jscl-js*
+          "
 var OMG = Object.create(null)
 self.OMG=OMG
 
-OMG.URL=new URL(document.currentScript.src)
-OMG.Path=OMG.URL.pathname.replace(/\\/[^\\\/]+$/,'')
-OMG.HostPath=(OMG.URL.username?(OMG.URL.username+
-                                 (OMG.URL.password?(':'+OMG.URL.password):'')+'@'):'')+
-                               OMG.URL.host+
-                               OMG.Path
-OMG.Base=OMG.URL.protocol+'//'+OMG.HostPath
-OMG.WS='" (if (use-wss-p) "wss://" "ws://") "'+OMG.HostPath+'" *root-path* *ws-path* "'
+OMG.inWorker=(typeof window==='undefined')
+OMG.inServiceWorker=(OMG.inWorker&&(typeof XMLHttpRequest==='undefined'))
+
+if(!OMG.inWorker) {
+  OMG.URL=new URL(document.currentScript.src)
+  OMG.Path=OMG.URL.pathname.replace(/\\/[^\\\/]+$/,'')
+  OMG.HostPath=(OMG.URL.username?(OMG.URL.username+
+                                   (OMG.URL.password?(':'+OMG.URL.password):'')+'@'):'')+
+                                 OMG.URL.host+
+                                 OMG.Path
+  OMG.Base=OMG.URL.protocol+'//'+OMG.HostPath
+  OMG.WS='" (if (use-wss-p) "wss://" "ws://") "'+OMG.HostPath+'" *root-path* *ws-path* "'
+}
 
 jscl.packages['COMMON-LISP-USER'] = jscl.packages.CL;
 
-OMG.random_key=(()=>{
-  const achars=Array(26).fill(0).reduce((...args)=>{args[0].push(String.fromCharCode('A'.charCodeAt(0)+args[2]));return args[0]},[])
-  return (len)=>{
-    return Array(len).fill().map(()=>{return achars[Math.floor(Math.random()*achars.length)]}).join('')
-  }})()
+if(!OMG.inServiceWorker) {
+  OMG.root_ws=undefined
+  OMG.InFetch={}
 
-OMG.root_ws=undefined
-OMG.InFetch={}
+  OMG.OriginalSymbolValue=jscl.internals.symbolValue
+  jscl.internals.symbolValue=(symbol)=>{
+    if(symbol.package) {
+      const full_name=symbol.package.packageName+':'+symbol.name
+      if(symbol.value===undefined&&symbol.package.omgPkg&&!OMG.InFetch[full_name]) {
+        //console.log('SYMVALUE FETCH:', full_name)
+        OMG.InFetch[full_name]=true
+        let xhr=new XMLHttpRequest()
+        xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
+        xhr.send(full_name)
+        if (xhr.status === 200) {
+          eval(xhr.response)
+        } else {
+          throw new Error('Cannot fetch symbol '+name)
+        }
+      }
+    }
+    return OMG.OriginalSymbolValue(symbol)
+  }
 
-OMG.OriginalSymbolValue=jscl.internals.symbolValue
-jscl.internals.symbolValue=(symbol)=>{
-  if(symbol.package) {
-    const full_name=symbol.package.packageName+':'+symbol.name
-    if(symbol.value===undefined&&symbol.package.omgPkg&&!OMG.InFetch[full_name]) {
-      //console.log('SYMVALUE FETCH:', full_name)
+  OMG.OriginalIntern=jscl.internals.intern
+
+  OMG.Fetch=(sym)=>{
+    const full_name=sym.package.packageName+':'+sym.name
+    //console.log('FVALUE FETCH:',full_name)
+    if(!OMG.InFetch[full_name]) {
+      OMG.InFetch[full_name]=true
+      let xhr=new XMLHttpRequest()
+      xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
+      xhr.send(full_name)
+      if (xhr.status === 200) {
+        //console.log(xhr.response)
+        eval(xhr.response)
+        OMG.InFetch[full_name]=false
+      } else {
+        OMG.InFetch[full_name]=false
+        throw new Error('Cannot fetch symbol '+sym.package.packageName+'::'+sym.name)
+      }
+    } else {
+      console.log('Already in fetch:',sym.name)
+    }
+  }
+
+  OMG.FetchFvalue=(sym)=>{
+    let isFetched=false
+    return (...args)=>{
+      if(isFetched) return sym.fvalue.apply(null,args)
+      OMG.Fetch(sym)
+      isFetched=true
+      sym.fvalue=sym.package.symbols[sym.name].fvalue
+      return sym.fvalue.apply(null,args)
+    }
+  }
+
+  OMG.InMakePackage=false
+  OMG.MakePackage=(package_name)=>{
+    if(!OMG.InMakePackage) {
+      OMG.InMakePackage=true
+      jscl.evaluateString('(DEFPACKAGE :'+package_name+' (:USE :CL :JSCL))')
+      OMG.InMakePackage=false
+      jscl.packages[package_name].omgPkg=true
+    }
+  }
+
+  jscl.internals.intern=(name, package_name)=>{
+    if(package_name && !(package_name in jscl.packages)) {
+      OMG.MakePackage(package_name)
+    }
+    let sym=OMG.OriginalIntern(name, package_name)
+    const full_name=package_name+':'+name
+    if('package' in sym&&sym.package.omgPkg&&sym.value===undefined&&
+       !jscl.internals.fboundp(sym)&&!OMG.InFetch[full_name]) {
+      sym.fvalue=OMG.FetchFvalue(sym)
+    }
+    return sym
+  }
+
+  OMG.RPC=(cmd)=>{
+    let xhr=new XMLHttpRequest()
+    xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', false)
+    xhr.send(cmd)
+    if (xhr.status === 200) {
+      return eval(xhr.response)
+    } else {
+      throw new Error('Cannot call RPC')
+    }
+  }
+
+  OMG.AsyncRPC=(cmd, cb)=>{
+    let xhr=new XMLHttpRequest()
+    xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', true)
+    xhr.onload=function (e) {
+      if (xhr.readyState === 4) {
+        if (xhr.status === 200) {
+          cb(eval(xhr.response))
+        } else {
+          throw new Error('Cannot call RPC')
+        }
+      }
+    }
+    xhr.onerror = function (e) {
+      throw new Error('Cannot call RPC')
+    }
+    xhr.send(cmd)
+  }
+
+  OMG.OriginalFP=jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue
+  jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue=(values,pkg)=>{
+    let res=OMG.OriginalFP(values,pkg)
+    if(!OMG.InMakePackage&&typeof(pkg)==='object'&&typeof(res)==='object'&&res.name==='NIL'&&res.package.packageName==='CL') {
+      OMG.MakePackage(pkg.name)
+      res=OMG.OriginalFP(values,pkg)
+    }
+    return res
+  }
+
+  OMG.OriginalLIL=jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue
+  jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue=(mv,name,lexenv,ns)=>{
+    let res=OMG.OriginalLIL(mv,name,lexenv,ns)
+    if(ns.name==='FUNCTION' && 'package' in name && name.package.omgPkg && 'name' in res && res.name==='NIL') {
+      OMG.Fetch(name)
+      res=OMG.OriginalLIL(mv,name,lexenv,ns)
+    }
+    return res
+  }
+
+  OMG.OriginalGSE=jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue
+  jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
+    const set_name = '(SETF_'+fn.car.name+')'
+    if('car' in fn && 'name' in fn.car && 'package' in fn.car && fn.car.package.omgPkg && !(set_name in fn.car.package.symbols)) {
+      //console.log('NEED FETCH:',set_name, fn.car.package.packageName)
+      const full_name=fn.car.package.packageName+':'+set_name
       OMG.InFetch[full_name]=true
       let xhr=new XMLHttpRequest()
       xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
@@ -435,218 +515,72 @@ jscl.internals.symbolValue=(symbol)=>{
       if (xhr.status === 200) {
         eval(xhr.response)
       } else {
-        throw new Error('Cannot fetch symbol '+name)
+        throw new Error('Cannot fetch set symbol '+fn.car.package.packageName+'::'+set_name)
       }
     }
+    return OMG.OriginalGSE(mv,fn)
   }
-  return OMG.OriginalSymbolValue(symbol)
-}
 
-OMG.OriginalIntern=jscl.internals.intern
+  OMG.OriginalCAMUC=jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue
+  jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue=(mv,gf,clss)=>{
+    let res=OMG.OriginalCAMUC(mv,gf,clss)
+    if ('name' in res && res.name=='NIL') {
+      OMG.Fetch(gf.cdr.cdr.car[0])
+      res=OMG.OriginalCAMUC(mv,gf,clss)
+    }
+    return res
+  }
 
-OMG.Fetch=(sym)=>{
-  const full_name=sym.package.packageName+':'+sym.name
-  //console.log('FVALUE FETCH:',full_name)
-  if(!OMG.InFetch[full_name]) {
-    OMG.InFetch[full_name]=true
-    let xhr=new XMLHttpRequest()
-    xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
-    xhr.send(full_name)
-    if (xhr.status === 200) {
-      //console.log(xhr.response)
-      eval(xhr.response)
-      OMG.InFetch[full_name]=false
+  OMG.OriginalFC=jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue
+  jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
+    if('package' in cls && cls.package.omgPkg &&
+       !cls.package.symbols[cls.name].omgClass) {
+      cls.package.symbols[cls.name].omgClass=true
+      OMG.Fetch(cls)
+    }
+    return OMG.OriginalFC(mv,cls,arg2)
+  }
+
+  OMG.OriginalFC1=jscl.packages.CL.symbols['FIND-CLASS'].fvalue
+  jscl.packages.CL.symbols['FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
+    if('package' in cls && cls.package.omgPkg &&
+       !cls.package.symbols[cls.name].omgClass) {
+      cls.package.symbols[cls.name].omgClass=true
+      OMG.Fetch(cls)
+    }
+    return OMG.OriginalFC1(mv,cls,arg2)
+  }
+
+  OMG.make_conn=()=>{
+    console.log('Connecting to host')
+    OMG.root_ws=new WebSocket(OMG.WS)
+    OMG.root_ws.onopen=()=>{console.log('Socket connected')}
+    OMG.root_ws.onclose=(ev)=>{
+      console.log('Socket closed ('+(ev.wasClean?'normally':'by error')+'), reconnecting')
+      delete(OMG.root_ws)
+      setTimeout(OMG.make_conn,1000)
+    }
+    OMG.root_ws.onerror=(err)=>{
+      console.log('Socket error ('+err.message+')')
+      OMG.root_ws.close()
+    }
+    OMG.root_ws.onmessage=function (ev) {
+      const cmd=ev.data;
+      setTimeout(()=>{eval(cmd)},1)
+    }
+  }
+
+  if(!OMG.inWorker) {
+    if(document.readyState==='complete') {
+      OMG.make_conn()
     } else {
-      OMG.InFetch[full_name]=false
-      throw new Error('Cannot fetch symbol '+sym.package.packageName+'::'+sym.name)
-    }
-  } else {
-    console.log('Already in fetch:',sym.name)
-  }
-}
-
-OMG.FetchFvalue=(sym)=>{
-  let isFetched=false
-  return (...args)=>{
-    if(isFetched) return sym.fvalue.apply(null,args)
-    OMG.Fetch(sym)
-    isFetched=true
-    sym.fvalue=sym.package.symbols[sym.name].fvalue
-    return sym.fvalue.apply(null,args)
-  }
-}
-
-OMG.InMakePackage=false
-OMG.MakePackage=(package_name)=>{
-  if(!OMG.InMakePackage) {
-    OMG.InMakePackage=true
-    jscl.evaluateString('(DEFPACKAGE :'+package_name+' (:USE :CL :JSCL))')
-    OMG.InMakePackage=false
-    jscl.packages[package_name].omgPkg=true
-  }
-}
-
-jscl.internals.intern=(name, package_name)=>{
-  if(package_name && !(package_name in jscl.packages)) {
-    OMG.MakePackage(package_name)
-  }
-  let sym=OMG.OriginalIntern(name, package_name)
-  const full_name=package_name+':'+name
-  if('package' in sym&&sym.package.omgPkg&&sym.value===undefined&&
-     !jscl.internals.fboundp(sym)&&!OMG.InFetch[full_name]) {
-    sym.fvalue=OMG.FetchFvalue(sym)
-  }
-  return sym
-}
-
-OMG.RPC=(cmd)=>{
-  let xhr=new XMLHttpRequest()
-  xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', false)
-  xhr.send(cmd)
-  if (xhr.status === 200) {
-    return eval(xhr.response)
-  } else {
-    throw new Error('Cannot call RPC')
-  }
-}
-
-OMG.AsyncRPC=(cmd, cb)=>{
-  let xhr=new XMLHttpRequest()
-  xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', true)
-  xhr.onload=function (e) {
-    if (xhr.readyState === 4) {
-      if (xhr.status === 200) {
-        cb(eval(xhr.response))
-      } else {
-        throw new Error('Cannot call RPC')
-      }
+      document.addEventListener('DOMContentLoaded',()=>{
+        OMG.make_conn()
+      })
     }
   }
-  xhr.onerror = function (e) {
-    throw new Error('Cannot call RPC')
-  }
-  xhr.send(cmd)
 }
-
-OMG.OriginalFP=jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue
-jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue=(values,pkg)=>{
-  let res=OMG.OriginalFP(values,pkg)
-  if(!OMG.InMakePackage&&typeof(pkg)==='object'&&typeof(res)==='object'&&res.name==='NIL'&&res.package.packageName==='CL') {
-    OMG.MakePackage(pkg.name)
-    res=OMG.OriginalFP(values,pkg)
-  }
-  return res
-}
-
-OMG.OriginalLIL=jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue
-jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue=(mv,name,lexenv,ns)=>{
-  let res=OMG.OriginalLIL(mv,name,lexenv,ns)
-  if(ns.name==='FUNCTION' && 'package' in name && name.package.omgPkg && 'name' in res && res.name==='NIL') {
-    OMG.Fetch(name)
-    res=OMG.OriginalLIL(mv,name,lexenv,ns)
-  }
-  return res
-}
-
-OMG.OriginalGSE=jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue
-jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
-  const set_name = '(SETF_'+fn.car.name+')'
-  if('car' in fn && 'name' in fn.car && 'package' in fn.car && fn.car.package.omgPkg && !(set_name in fn.car.package.symbols)) {
-    //console.log('NEED FETCH:',set_name, fn.car.package.packageName)
-    const full_name=fn.car.package.packageName+':'+set_name
-    OMG.InFetch[full_name]=true
-    let xhr=new XMLHttpRequest()
-    xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
-    xhr.send(full_name)
-    if (xhr.status === 200) {
-      eval(xhr.response)
-    } else {
-      throw new Error('Cannot fetch set symbol '+fn.car.package.packageName+'::'+set_name)
-    }
-  }
-  return OMG.OriginalGSE(mv,fn)
-}
-
-OMG.OriginalCAMUC=jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue
-jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue=(mv,gf,clss)=>{
-  let res=OMG.OriginalCAMUC(mv,gf,clss)
-  if ('name' in res && res.name=='NIL') {
-    OMG.Fetch(gf.cdr.cdr.car[0])
-    res=OMG.OriginalCAMUC(mv,gf,clss)
-  }
-  return res
-}
-
-OMG.OriginalFC=jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue
-jscl.packages.JSCL.symbols['!FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
-  if('package' in cls && cls.package.omgPkg &&
-     !cls.package.symbols[cls.name].omgClass) {
-    cls.package.symbols[cls.name].omgClass=true
-    OMG.Fetch(cls)
-  }
-  return OMG.OriginalFC(mv,cls,arg2)
-}
-
-OMG.OriginalFC1=jscl.packages.CL.symbols['FIND-CLASS'].fvalue
-jscl.packages.CL.symbols['FIND-CLASS'].fvalue=(mv,cls,arg2)=>{
-  if('package' in cls && cls.package.omgPkg &&
-     !cls.package.symbols[cls.name].omgClass) {
-    cls.package.symbols[cls.name].omgClass=true
-    OMG.Fetch(cls)
-  }
-  return OMG.OriginalFC1(mv,cls,arg2)
-}
-
-
-/*
-OMG.OriginalCO=jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue
-jscl.packages.JSCL.symbols['!CLASS-OF'].fvalue=(mv,cls)=>{
-  if('name' in cls) {
-    console.log('CO:',cls.name,cls)
-  }
-  if(typeof(cls)=='object' && 'package' in cls && cls.package.omgPkg &&
-     !cls.package.symbols[cls.name].omgClass) {
-    cls.package.symbols[cls.name].omgClass=true
-    console.log('COF:', cls.name)
-    OMG.Fetch(cls)
-    console.log('COF OK:', cls.name)
-  }
-  return OMG.OriginalCO(mv,cls)
-}
-*/
-
-OMG.make_conn=()=>{
-  console.log('Connecting to host')
-  OMG.root_ws=new WebSocket(OMG.WS)
-  OMG.root_ws.onopen=()=>{console.log('Socket connected')}
-  OMG.root_ws.onclose=(ev)=>{
-    console.log('Socket closed ('+(ev.wasClean?'normally':'by error')+'), reconnecting')
-    delete(OMG.root_ws)
-    setTimeout(OMG.make_conn,1000)
-  }
-  OMG.root_ws.onerror=(err)=>{
-    console.log('Socket error ('+err.message+')')
-    OMG.root_ws.close()
-  }
-  OMG.root_ws.onmessage=function (ev) {
-    const cmd=ev.data;
-    setTimeout(()=>{eval(cmd)},1)
-  }
-}
-
-"   (if *pwa-mainfest*
-      (concatenate 'string "if (navigator.serviceWorker != null) {
-      navigator.serviceWorker.register('" *pwa-sw-js-name* "', {scope: '" *root-path* "'}).then(function(registration) {
-    console.log('Registered events at scope: ', registration.scope);
-    });}")
-      "")
-    "if(document.readyState==='complete') {
-  OMG.make_conn()
-} else {
-  document.addEventListener('DOMContentLoaded',()=>{
-    OMG.make_conn()
-  })
-}})()
+})()
 "))
 
 (defvar *current-session* nil)       ;; The current session, usually set by remote-exec
@@ -1033,28 +967,36 @@ OMG.make_conn=()=>{
     (read-sequence tseq s)
     (utf-8-bytes-to-string tseq)))
 
-(defvar *pwa-sw-js* "
-if(OMG===undefined) {
-  var OMG={}
-}
-OMG.bc = new BroadcastChannel('omg_service_worker');
+(in-package :omg)
 
-self.addEventListener('install', function(e) {
-  console.log('Install event!')
-  return self.skipWaiting()
+(defun get-service-worker-js ()
+  (concatenate 'string
+    "
+   self.Deno=1; // Just a fake to disable JSCL worker code
+    "
+    (get-main-js)
+    "
+self.addEventListener('install', (e)=>{
+ console.log('Service worker installed!')
+ return self.skipWaiting()
 })
 
-self.addEventListener('activate', function(e) {
-  console.log('Activate event!')
-  return self.clients.claim()
+self.addEventListener('activate', (e)=>{
+ console.log('Service worker activated!')
+ return self.clients.claim()
 })
+
+self.addEventListener('message', (currentEvent)=>{
+ jscl.internals.globalEval(currentEvent.data)
+})
+
+OMG.fetchHandler=(ev)=>{return}
 
 self.addEventListener('fetch', function(e) {
-  console.log('Fetch event:', e.request.url)
-  OMG.bc.postMessage({type:'fetch', uri:e.request.url})
-  return fetch(e.request.clone())
+  OMG.fetchHandler(e)
 })
-")
+
+"))
 
 (defvar *user-uri-handler* (lambda (env)
                              (declare (ignore env))
@@ -1068,19 +1010,10 @@ self.addEventListener('fetch', function(e) {
 (defun serv (env)
   (let ((uri (getf env :REQUEST-URI))
         (*read-eval* nil))
-    (cond ((equal uri (concatenate 'string *root-path* *pwa-path* "/manifest.json"))
-           (if *pwa-mainfest*
-               `(200 (:content-type "application/json; charset=utf-8") (,*pwa-mainfest*))
-               '(404 (:content-type "text/plain") ("File not found"))))
-          ((equal uri *pwa-sw-js-name*)
-           (if *pwa-mainfest*
-               `(200 (:content-type "text/javascript; charset=utf-8")
-                     (,*pwa-sw-js*))
-               '(404 (:content-type "text/plain") ("File not found"))))
-          ((equal uri *pwa-icon*)
-           `(200 (:content-type ,*pwa-icon-type*
-                  :content-length ,(with-open-file (f *pwa-icon-file* :direction :input) (file-length f)))
-                 ,*pwa-icon-file*))
+    (cond ((equal uri (concatenate 'string *root-path* *service-worker-path*))
+           `(200
+               (:content-type "text/javascript; charset=utf-8" :cache-control "no-store")
+               (,(get-service-worker-js))))
           ((equal uri (concatenate 'string *root-path* *js-path*))
            `(200
                (:content-type "text/javascript; charset=utf-8")
