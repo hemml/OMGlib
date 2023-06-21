@@ -962,6 +962,7 @@ OMG.make_conn=()=>{
           (exec)
           (loop for s being the hash-values of *session-list* collect (with-session s (exec)))))))
 
+(defvar *pre-boot-functions* nil)
 (defvar *boot-functions* nil)
 
 (defun add-to-boot (f)
@@ -973,11 +974,19 @@ OMG.make_conn=()=>{
 (defun rm-from-boot (f)
   (delete f *boot-functions*))
 
+(defvar-f *boot-done* nil)
+
 (defun boot-f ()
-  "The boot code, will be executed on the browser-side just after the socket is connected."
-  (remote-exec `(defparameter *session-id* ',(get-id *current-session*)) :nowait)
+  "The boot code, will be executed on the browser-side just after the page is loaded and socket connected."
   (setf (slot-value *current-session* 'last-active) (get-universal-time))
-  (map nil (lambda (f) (remote-exec f :nowait)) *boot-functions*))
+  (remote-exec `(if (not *boot-done*)
+                    (progn
+                      (defparameter *session-id* ',(get-id *current-session*))
+                      (setf *boot-done* t)
+                      ,@*pre-boot-functions*
+                      ,@*boot-functions*
+                      nil))
+               :nowait))
 
 (defun make-ws (env)
   "Return the websocket for the new session. Also, creates the session object."

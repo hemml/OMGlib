@@ -495,7 +495,7 @@ The following code can be used to work in `omgdaemon` environment:
 
 (defparameter-f *page-shown* nil)
 
-(defun-f my-boot () ;; this function will be called after each WebSocket connection
+(defun-f my-boot () ;; this function will be called after the first WebSocket connection
   (if (not *page-shown*) ;; The page is just loaded
       (progn
         (register-hash-cb "#devel" ;; The way to proceed to "devel" version using #devel hash
