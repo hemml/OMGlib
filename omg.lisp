@@ -5,6 +5,7 @@
            set-boot          ;; set boot code
            add-to-root-html  ;; add a text to html body
            add-to-root-html-head ;; add a text to html head
+           add-serve-path    ;; add custom handler for specific URI (relative to *root-path*)
            set-root-html     ;; set html body
            set-root-head     ;; set html head
            rm-from-boot      ;; remove a code from boot sequence
@@ -1059,6 +1060,11 @@ self.addEventListener('fetch', function(e) {
                              (declare (ignore env))
                              '(404 (:content-type "text/plain") ("File not found"))))
 
+(defvar *serve-paths* (make-hash-table :test #'equal))
+
+(defun add-serve-path (path result)
+  (setf (gethash path *serve-paths*) result))
+
 (defun serv (env)
   (let ((uri (getf env :REQUEST-URI))
         (*read-eval* nil))
@@ -1110,7 +1116,12 @@ self.addEventListener('fetch', function(e) {
              (lambda (responder)
                (declare (ignorable responder))
                (start-connection ws))))
-          (t (funcall *user-uri-handler* env)))))
+          (t (if (equal (string>= uri *root-path*) (length *root-path*))
+                 (let ((res (gethash (subseq uri (length *root-path*)) *serve-paths*)))
+                   (if res
+                       res
+                       (funcall *user-uri-handler* env)))
+                 (funcall *user-uri-handler* env))))))
 
 (defvar *serv* nil)
 

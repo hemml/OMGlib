@@ -456,6 +456,14 @@ If the library cannot serve http request it will respond with `404` error by def
                 (,(format nil "The ~A URI was requested." uri))))))
 ```
 
+Also you can define a custom responder for a specific path (relative to the `omg::*root-path*`):
+
+```
+(add-serve-path "mypage"
+                `(200 (:content-type "text/html; charset=utf-8")
+                      ("My custom page")
+```
+
 ### PWA mode
 
 The library can be used to create Progressive Web App (PWA), just by adding one single function call:
