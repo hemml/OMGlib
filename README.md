@@ -473,20 +473,54 @@ The library can be used to create Progressive Web App (PWA), just by adding one 
   (make-pwa (:name "Application Name" :short-name "Application Short Name" :display "standalone" :theme-color "#000000" :background-color "#ffffff" :icon-path "/path/to/icon/file.png")
 ```
 
-All of the arguments are optional (default values will be used), but to get installable app you need to provide a path to icon file. Now only `.png` `.jpeg` and `.gif` image formats are accepted.
+All of the arguments are optional (default values will be used). Only `.png` `.jpeg` and `.gif` image formats of icon file are accepted.
 
-Worker process sending broadcast message for every `fetch` request, the app can listen for them with the following code:
+### ServiceWorker
+
+**WARNING:** The ServiceWorker code is in early experimental state, the ServiceWorker can lose all it context sometimes. This will be fixed later.
+
+You can install and use ServiceWorker, just create a service-worker object (must be executed on browser-side):
 
 ```
-(setf (jscl::oget (jscl::make-new (jscl::oget (jscl::%js-vref "window") "BroadcastChannel")
-                                    (jscl::lisp-to-js "omg_service_worker"))
-                  "onmessage")
-      (lambda (msg)
-        (let ((typ (jscl::oget msg "data" "type")))
-          (if (equal typ "fetch")
-              (let ((uri (jscl::oget msg "data" "uri")))
-                (jslog "FETCH:" uri))))))
+(make-instance 'service-worker)
 ```
+
+Or just execute a code in a service-worker (the service-worker instance will be created automatically, if needed) with the followin macro:
+
+```
+(in-service-worker
+  ((jscl::oget (jscl::%js-vref "self") "console" "log") "Hello!"))
+```
+
+**NB:** The ServiceWorker is executed in a separate context, so you cannot use any symbols and functions from your main code. Also, the ServiceWorker cannot use syncronous XHR, so it cannot fetch any symbols from backend. So, you must explicitely define all needed functions:
+
+```
+(in-service-worker
+  (defun jslog (&rest args)
+    (apply (jscl::oget (jscl::%js-vref "self") "console" "log") args))
+  (jslog "Hello!")
+```
+
+After the function is defined, you can use it any time. But the browser can reload ServiceWorker in some cases and reset it state, so it is more safe to use code like:
+
+```
+(in-service-worker
+  (labels ((jslog (&rest args)
+             (apply (jscl::oget (jscl::%js-vref "self") "console" "log") args)))
+   (jslog "Hello!")))
+```
+
+You can use ServiceWorker to catch and handle network requests with the following macro:
+
+```
+(set-service-worker-uri-handler (uri req event)
+   (cond ((equal (uri-path uri) "/my-path")
+          (jslog "Request:" req)
+          (respond-with "SOME DATA"))
+         (t (default-action)))))
+```
+
+In the following macro the utility functions `jslog`, `respond-with` and `default-action` are pre-defined, for your convenience. You can use this macro multiple times, to add several handlers, just don't forget to call `(default-action)` if the request is not handled.
 
 ## OMG daemon mode
 
