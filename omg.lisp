@@ -4,7 +4,9 @@
   (:export add-to-boot       ;; add a code to boot sequence
            set-boot          ;; set boot code
            add-to-root-html  ;; add a text to html body
+           add-to-root-html-head ;; add a text to html head
            set-root-html     ;; set html body
+           set-root-head     ;; set html head
            rm-from-boot      ;; remove a code from boot sequence
            start-server      ;; start a http(s)-server
            kill-server       ;; kill a http(s)-server
@@ -368,22 +370,12 @@
                                            size
                                            typ))
                              ""))))
+(defvar *extra-head* "")
 
 (defun get-root-html ()
   "Return a somple HTML with JS injected."
-  (concatenate 'string "<html><head><title>"
-               (if *pwa-name* *pwa-name* "")
-               "</title>"
-               (if *pwa-mainfest*
-                   (format nil "<meta name=\"viewpo\rt\" content=\"width=device-width, user-scalable=no\" />
-<link rel=\"manifest\" href=\"~A/~A/manifest.json\" />~A"
-                           (string-right-trim '(#\/) *root-path*) *pwa-path*
-                           (if *pwa-icon*
-                               (format nil "<link rel=\"icon\" href=\"~A\" type=\"~A\" />"
-                                       *pwa-icon*
-                                       *pwa-icon-type*)
-                               ""))
-                   "")
+  (concatenate 'string "<html><head>"
+               *extra-head*
                "<script src='"
                *root-path* *js-path*
                "' type='text/javascript'></script></head><body>"
@@ -393,8 +385,14 @@
 (defun add-to-root-html (html)
   (setf *extra-html* (concatenate 'string *extra-html* html)))
 
+(defun add-to-root-html-head (html)
+  (setf *extra-head* (concatenate 'string *extra-head* html)))
+
 (defun set-root-html (html)
   (setf *extra-html* html))
+
+(defun set-root-head (html)
+  (setf *extra-head* html))
 
 (defun get-main-js ()
   "Return the JS code, including JSCL and OMG parts glued."
