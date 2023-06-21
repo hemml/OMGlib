@@ -259,14 +259,14 @@
                             (jscl::compile-toplevel ',f-form))
                           (map nil
                             (lambda (cls)
-                              (pushnew ',name (gethash-lock cls *exported-classes-methods*)))
+                              (pushnew ',f-form (gethash-lock cls *exported-classes-methods*)))
                             classes)
                           (remote-update-methods ',name classes)))
                     (if (intersection (gethash-lock ',name *accessor-classes*)
-                                      (append classes (mapcan #'get-all-sup classes)))
+                                      (concatenate 'list classes (mapcan #'get-all-sup classes)))
                         (map nil
                           (lambda (cls)
-                            (pushnew ',name (gethash-lock cls *exported-classes-methods*)))
+                            (pushnew ',f-form (gethash-lock cls *exported-classes-methods*)))
                           classes))))
                 (t `(progn
                       (setf (gethash-lock ',ex-sym *exportable-expressions*) ',f-form)
@@ -814,13 +814,8 @@ OMG.make_conn=()=>{
   (let* ((datp (gethash-lock sym *exportable-expressions*))
          (auto-funcs (if (and (listp datp)
                               (equal 'defclass (car datp)))
-                         (mapcan
-                           (lambda (sym)
-                             (let ((cod (gethash-lock sym *exportable-expressions*)))
-                               (if cod
-                                   (list cod))))
-                           (remove-duplicates
-                             (gethash-lock sym *exported-classes-methods*))))))
+                         (remove-duplicates
+                           (gethash-lock sym *exported-classes-methods*)))))
     (if datp
        (let* ((dat (if (boundp sym)
                        (list (car datp) (cadr datp)
