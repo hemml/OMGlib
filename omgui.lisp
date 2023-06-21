@@ -30,6 +30,7 @@
            get-element-id
            get-omg-cookie-name
            get-my-version
+           in-service-worker
            js-get-element-by-id
            jsceil
            jsfloor
@@ -65,7 +66,9 @@
            register-hash-cb
            remove-element
            rm-event-handler
+           service-worker
            session-storage
+           set-service-worker-uri-handler
            show-notification
            visible-width
            visible-height
