@@ -439,6 +439,7 @@ The default HTML page returned for "/" just contains the main js script link, bu
 
 ```
  (add-to-root-html "<span id='loadBanner'>The page is loading, please wait...</span>")
+ (add-to-root-head "<title>My application</title>")
  (add-to-boot '(remove-element (js-get-element-by-id "loadBanner")))
 ```
 
