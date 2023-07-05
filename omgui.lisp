@@ -178,37 +178,37 @@
   "Math.trunc function"
   ((jscl::oget (jscl::%js-vref "Math") "trunc") x))
 
-(defun-f jsln (&rest args)
+(defun-f jsln (arg)
   "Math.log function"
-  (apply (jscl::oget (jscl::%js-vref "Math") "log") args))
+  ((jscl::oget (jscl::%js-vref "Math") "log") arg))
 
-(defun-f jssin (&rest args)
+(defun-f jssin (arg)
   "Math.sin function"
-  (apply (jscl::oget (jscl::%js-vref "Math") "sin") args))
+  ((jscl::oget (jscl::%js-vref "Math") "sin") arg))
 
-(defun-f jscos (&rest args)
+(defun-f jscos (arg)
   "Math.cos function"
-  (apply (jscl::oget (jscl::%js-vref "Math") "cos") args))
+  ((jscl::oget (jscl::%js-vref "Math") "cos") arg))
 
-(defun-f jstan (&rest args)
+(defun-f jstan (arg)
   "Math.tan function"
-  (apply (jscl::oget (jscl::%js-vref "Math") "tan") args))
+  ((jscl::oget (jscl::%js-vref "Math") "tan") arg))
 
-(defun-f jsasin (&rest args)
+(defun-f jsasin (arg)
   "Math.asin function"
-  (apply (jscl::oget (jscl::%js-vref "Math") "asin") args))
+  ((jscl::oget (jscl::%js-vref "Math") "asin") arg))
 
-(defun-f jsacos (&rest args)
+(defun-f jsacos (arg)
   "Math.acos function"
-  (apply (jscl::oget (jscl::%js-vref "Math") "acos") args))
+  ((jscl::oget (jscl::%js-vref "Math") "acos") arg))
 
-(defun-f jsatan (&rest args)
+(defun-f jsatan (arg)
   "Math.atan function"
-  (apply (jscl::oget (jscl::%js-vref "Math") "atan") args))
+  ((jscl::oget (jscl::%js-vref "Math") "atan") arg))
 
-(defun-f jsatan2 (&rest args)
+(defun-f jsatan2 (y x)
   "Math.atan2 function"
-  (apply (jscl::oget (jscl::%js-vref "Math") "atan2") args))
+  ((jscl::oget (jscl::%js-vref "Math") "atan2") y x))
 
 (defun-f jsmin (&rest args)
   "Math.min function"
