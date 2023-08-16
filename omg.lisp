@@ -356,6 +356,8 @@
 var OMG = Object.create(null)
 self.OMG=OMG
 
+OMG.session_id=false
+
 OMG.inWorker=(typeof window==='undefined')
 OMG.inServiceWorker=(OMG.inWorker&&(typeof XMLHttpRequest==='undefined'))
 
@@ -554,7 +556,10 @@ if(!OMG.inServiceWorker) {
   OMG.make_conn=()=>{
     console.log('Connecting to host')
     OMG.root_ws=new WebSocket(OMG.WS)
-    OMG.root_ws.onopen=()=>{console.log('Socket connected')}
+    OMG.root_ws.onopen=()=>{
+      console.log('Socket connected')
+      if(OMG.session_id) OMG.root_ws.send('!!SESID:'+OMG.session_id)
+    }
     OMG.root_ws.onclose=(ev)=>{
       console.log('Socket closed ('+(ev.wasClean?'normally':'by error')+'), reconnecting')
       delete(OMG.root_ws)
@@ -602,9 +607,24 @@ if(!OMG.inServiceWorker) {
    (last-active :initform (get-universal-time)
                 :reader last-active)
    (wait-list :initform (make-hash-table)
-              :reader wait-list))
+              :reader wait-list)
+   (disconnected-at :initform nil
+                    :accessor disconnected-at)
+   (session-ws :initarg :ws
+               :initform (error "Session WS required")
+               :accessor session-ws))
   (:documentation
     "The session object, holding the session socket, the wait-list holding semaphores and storing result data from remote-exec calls"))
+
+(defvar *remote-objects* (make-hash-table))
+
+(defclass remote-object ()
+  ((session :initarg :session
+            :initform nil
+            :accessor session)
+   (id :initarg :id
+       :initform (error "ID is required")
+       :accessor id)))
 
 (defun find-session (sid)
   "Return session object with specific ID"
@@ -910,6 +930,7 @@ if(!OMG.inServiceWorker) {
   (remote-exec `(if (not *boot-done*)
                     (progn
                       (defparameter *session-id* ',(get-id *current-session*))
+                      (setf (jscl::oget (jscl::%js-vref "self") "OMG" "session_id") ,(symbol-name (get-id *current-session*)))
                       (setf *boot-done* t)
                       ,@*pre-boot-functions*
                       ,@*boot-functions*
@@ -919,7 +940,7 @@ if(!OMG.inServiceWorker) {
 (defun make-ws (env)
   "Return the websocket for the new session. Also, creates the session object."
   (let* ((ws (websocket-driver.server:make-server env))
-         (ses (make-instance 'omg-session :socket ws))
+         (ses (make-instance 'omg-session :socket ws :ws ws))
          (sid (get-id ses)))
     (setf (gethash-lock sid *session-list*) ses)
     (on :open ws
@@ -937,28 +958,31 @@ if(!OMG.inServiceWorker) {
         (format t "WS error: ~S~%" error)))
     (on :message ws
       (lambda (msg)
-        (let* ((m (subseq msg 0 1))
-               (rid (intern (subseq msg 1 (+ |sid-length| 1)) :omg))
-               (val (subseq msg (+ |sid-length| 1))))
-          (setf (slot-value ses 'last-active) (get-universal-time))
-          (cond ((equal m "~")
-                 (let* ((wlist (wait-list ses))
-                        (trsem (gethash-lock rid wlist)))
-                  (if trsem
-                     (progn
-                       (setf (gethash-lock rid wlist) (list (car trsem) (cadr trsem) val))
-                       (signal-semaphore (cadr trsem))))))))))
+        (if (and (> (length msg) 8)
+                 (equal (subseq msg 0 8) "!!SESID:"))
+            (let* ((new-sid (intern (subseq msg 8) :omg))
+                   (new-ses (gethash new-sid *session-list*)))
+              (if new-ses
+                  (progn
+                    (setf (disconnected-at ses) 0)
+                    (setf (disconnected-at new-ses) nil)
+                    (setf ses new-ses)
+                    (setf sid new-sid))))
+            (let* ((m (subseq msg 0 1))
+                   (rid (intern (subseq msg 1 (+ |sid-length| 1)) :omg))
+                   (val (subseq msg (+ |sid-length| 1))))
+              (setf (slot-value ses 'last-active) (get-universal-time))
+              (cond ((equal m "~")
+                     (let* ((wlist (wait-list ses))
+                            (trsem (gethash-lock rid wlist)))
+                      (if trsem
+                         (progn
+                           (setf (gethash-lock rid wlist) (list (car trsem) (cadr trsem) val))
+                           (signal-semaphore (cadr trsem)))))))))))
     (on :close ws
        (lambda (&key code reason)
         (format t "WS closed (~a ~a)~%" code reason)
-        (maphash (lambda (k v)
-                   (if (and (car v) (not (equal (current-thread) (car v))) (thread-alive-p (car v)))
-                       (destroy-thread (car v)))
-                   (unintern k))
-                 (wait-list ses))
-        (remhash sid *session-list*)
-        (remove-all-listeners ws)
-        (unintern sid)))
+        (setf (disconnected-at ses) (get-universal-time))))
     ws))
 
 (defun get-str-from (s len)
@@ -1090,14 +1114,19 @@ self.addEventListener('fetch', function(e) {
                              (loop for k being each hash-key of h collect k))))
                   (map nil #'clwl (list *gimme-wait-list* *takit-wait-list*))
                   (map nil
-                    (lambda (k)
-                      (let ((ses (gethash-lock k *session-list*)))
-                        (if (not (equal (ready-state (socket ses)) :open))
-                            (if (> (- tim (last-active ses)) *session-timeout*)
-                                (progn
-                                  (remhash k *session-list*)
-                                  (unintern k)))
-                            (setf (slot-value ses 'last-active) tim))))
+                    (lambda (sid)
+                      (let ((ses (gethash-lock sid *session-list*)))
+                        (if (> (- (get-universal-time) (disconnected-at ses))
+                               *session-timeout*)
+                            (progn
+                              (maphash (lambda (k v)
+                                         (if (and (car v) (not (equal (current-thread) (car v))) (thread-alive-p (car v)))
+                                             (destroy-thread (car v)))
+                                         (unintern k))
+                                       (wait-list ses))
+                              (remhash sid *session-list*)
+                              (remove-all-listeners (session-ws ses))
+                              (unintern sid)))))
                     (loop for k being each hash-key of *session-list* collect k))
                   (map nil
                     (lambda (thr)
