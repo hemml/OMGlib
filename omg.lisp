@@ -1116,14 +1116,20 @@ self.addEventListener('fetch', function(e) {
                   (map nil
                     (lambda (sid)
                       (let ((ses (gethash-lock sid *session-list*)))
-                        (if (> (- (get-universal-time) (disconnected-at ses))
-                               *session-timeout*)
+                        (if (and (disconnected-at ses)
+                                 (> (- (get-universal-time) (disconnected-at ses))
+                                    *session-timeout*))
                             (progn
                               (maphash (lambda (k v)
                                          (if (and (car v) (not (equal (current-thread) (car v))) (thread-alive-p (car v)))
                                              (destroy-thread (car v)))
                                          (unintern k))
                                        (wait-list ses))
+                              (map nil
+                                   (lambda (id)
+                                     (remhash id *remote-objects*))
+                                   (loop for obj being each hash-value of *remote-objects*
+                                         when (equal (session obj) ses) collect (id obj)))
                               (remhash sid *session-list*)
                               (remove-all-listeners (session-ws ses))
                               (unintern sid)))))
