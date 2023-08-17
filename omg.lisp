@@ -361,6 +361,42 @@ OMG.session_id=false
 OMG.inWorker=(typeof window==='undefined')
 OMG.inServiceWorker=(OMG.inWorker&&(typeof XMLHttpRequest==='undefined'))
 
+OMG.objectRegistry={}
+
+OMG.find_object=(id)=>{
+  return OMG.objectRegistry[id]
+}
+
+OMG.register_object=(obj)=>{
+  const find_rnd_key=()=>{
+    const id=parseInt((Math.random() + 1).toString().substring(3)+'0')
+    if(id in OMG.objectRegistry) find_rnd_key()
+    return id
+  }
+  const obj_id=('omgObjId' in obj)?obj.omgObjId:find_rnd_key()
+  obj.omgObjId=obj_id
+  OMG.objectRegistry[obj_id]=obj
+  return obj_id
+}
+
+OMG.MOPr=jscl.packages.JSCL.symbols['MOP-OBJECT-PRINTER'].fvalue
+OMG.WrStr=jscl.packages.CL.symbols['WRITE-STRING'].fvalue
+jscl.packages.JSCL.symbols['MOP-OBJECT-PRINTER'].fvalue=(values,form,stream)=>{
+  const obj_id=OMG.register_object(form)
+  return OMG.WrStr(values,jscl.internals.js_to_lisp('#'+obj_id+'Ё'),stream)
+}
+
+OMG.WRAux=jscl.packages.JSCL.symbols['WRITE-AUX'].fvalue
+jscl.packages.JSCL.symbols['WRITE-AUX'].fvalue=(values,form,stream,known_objects,object_ids)=>{
+  const is_js=jscl.packages.JSCL.symbols['JS-OBJECT-P'].fvalue(null,form)
+  if(is_js && typeof(is_js)==='object' && 'name' in is_js && is_js.name==='T') {
+    const obj_id=OMG.register_object(form)
+    return OMG.WrStr(values,jscl.internals.js_to_lisp('#'+obj_id+'Ё'),stream)
+  }
+  return OMG.WRAux(values,form,stream,known_objects,object_ids)
+}
+
+
 if(!OMG.inWorker) {
   OMG.URL=new URL(document.currentScript.src)
   OMG.Path=OMG.URL.pathname.replace(/\\/[^\\\/]+$/,'')
@@ -626,6 +662,16 @@ if(!OMG.inServiceWorker) {
        :initform (error "ID is required")
        :accessor id)))
 
+(defmethod initialize-instance :after ((obj remote-object) &key &allow-other-keys)
+  (setf (session obj) *current-session*))
+
+(defparameter *in-omg-writer* nil)
+
+(defmethod print-object ((obj remote-object) s)
+  (if *in-omg-writer*
+      (write `((jscl::oget (jscl::%js-vref "self") "OMG" "find_object") ,(id obj)) :stream s)
+      (format s "#<REMOTE-JS-OBJECT ~A ~A>" (get-id (session obj)) (id obj))))
+
 (defun find-session (sid)
   "Return session object with specific ID"
   (gethash-lock sid *session-list*))
@@ -727,17 +773,21 @@ if(!OMG.inServiceWorker) {
     (setf (gethash-lock key *gimme-wait-list*) `((:result . ,res) (:time . ,time)))
     (signal-semaphore sem)))
 
+(defun omg-write-to-string (form)
+  (let ((*in-omg-writer* t))
+    (write-to-string form)))
+
 (defun compile-to-js (code pkg)
   "Return JS for the code, pkg is current package for compilation context."
   (let* ((*package* pkg)
-         (c1 (write-to-string
+         (c1 (omg-write-to-string
                `(let ((*package* (find-package (intern ,(package-name pkg) :keyword))))
                   ,code)))
          (compile-local *local-compile*)
          (code (if compile-local
                    (jscl::with-compilation-environment
                      (jscl::compile-toplevel (jscl::ls-read-from-string c1) t t))
-                   (write-to-string c1)))
+                   c1))
          (rcode (if compile-local
                     (replace-all (replace-all (replace-all (replace-all code "\\" "\\\\") (string #\linefeed) "\\n") (string #\return) "\\\\r") "\"" "\\\"")
                     (replace-all (replace-all code (string #\linefeed) " ") (string #\return) " ")))
@@ -745,6 +795,18 @@ if(!OMG.inServiceWorker) {
                   (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(\"" rcode "\"))")
                   (concatenate 'string "jscl.evaluateString(" rcode ")"))))
      res))
+
+(defun omg-read-from-string (s)
+  (let ((*readtable* (copy-readtable))
+        (*read-eval* nil))
+    (set-dispatch-macro-character #\# #\Ё
+      (lambda (st subch infix)
+        (declare (ignore subch st))
+        (let ((fnd (gethash infix *remote-objects*)))
+          (if fnd
+              fnd
+              (setf (gethash infix *remote-objects*) (make-instance 'remote-object :id infix))))))
+    (read-from-string s)))
 
 (defun takit (key res)
   "The handler for takit-requests. This requests are used to return macro expansion results from browser-side"
@@ -754,7 +816,7 @@ if(!OMG.inServiceWorker) {
         (setf (gethash-lock key *takit-wait-list*)
               (let ((*package* (symbol-package (cdr (assoc :symbol sem-dat-sym))))
                     (*read-eval* nil))
-                `((:result . ,(read-from-string res))
+                `((:result . ,(omg-read-from-string res))
                   ,(assoc :time sem-dat-sym))))
         (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,newsem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-dat-sym)))
         (signal-semaphore (cdr (assoc :sem sem-dat-sym)))
@@ -805,7 +867,7 @@ if(!OMG.inServiceWorker) {
       (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,(intern "omg-rpc-symbol" pkg))))
       (push (bt:make-thread
               (lambda ()
-                (put-wl-result (compile-to-js `(read-from-string ,(write-to-string (apply op args))) pkg) key))
+                (put-wl-result (compile-to-js `(read-from-string ,(omg-write-to-string (apply op args))) pkg) key))
               :initial-bindings `((*current-res* . ',key)
                                   (*current-session* . ,*current-session*)
                                   (*in-rpc* . t)))
@@ -898,7 +960,7 @@ if(!OMG.inServiceWorker) {
                              (progn
                                (wait-on-semaphore sem)
                                (let ((ret (let ((*read-eval* nil))
-                                            (read-from-string (caddr (gethash-lock key wlist))))))
+                                            (omg-read-from-string (caddr (gethash-lock key wlist))))))
                                    (remhash key wlist)
                                 (unintern key)
                                 (apply #'values ret)))))
@@ -1046,9 +1108,9 @@ self.addEventListener('fetch', function(e) {
            `(200 (:content-type "text/html; charset=utf-8") (,(get-root-html))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path*))
                 (getf env :content-length))
-           (let* ((cmd (read-from-string (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
-                                                           "\\n"
-                                                           (make-string 1 :initial-element #\newline))))
+           (let* ((cmd (omg-read-from-string (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
+                                                               "\\n"
+                                                               (make-string 1 :initial-element #\newline))))
                   (pkg (find-package (car cmd)))
                   (op (intern (symbol-name (cadr cmd)) pkg))
                   (args (caddr cmd))
