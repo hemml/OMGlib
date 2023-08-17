@@ -13,9 +13,11 @@
            kill-server       ;; kill a http(s)-server
            restart-server    ;; restart a http(s)-server
            defclass-f        ;; define a browser-side class
+           defclass-m        ;; define a both-side class
            defun-f           ;; define a browser-side function
            defmacro-f        ;; define a browser-side macro
            defmethod-f       ;; define a browser-side method
+           defmethod-r       ;; define a rpc method for both-side classess
            defgeneric-f      ;; define a browser-side generic
            defvar-f          ;; define a browser-side variable
            defparameter-f    ;; define a browser-side parameter
@@ -123,11 +125,11 @@
       (equal pkg (find-package :jscl))
       (equal pkg (find-package :jscl/loop))))
 
-(defun register-rpc (name)
+(defun register-rpc (name &optional (def 'defun))
   (remhash name *exportable-expressions*)
   (setf (gethash-lock name *rpc-functions*) t)
   (setf (gethash-lock name *exportable-expressions*)
-       `(defun ,name (&rest argl)
+       `(,def ,name (&rest argl)
           (funcall (jscl::oget (jscl::%js-vref "self") "OMG" "RPC")
                    (write-to-string (list ,(package-name *package*)
                                           ',name
@@ -672,6 +674,55 @@ if(!OMG.inServiceWorker) {
       (write `((jscl::oget (jscl::%js-vref "self") "OMG" "find_object") ,(id obj)) :stream s)
       (format s "#<REMOTE-JS-OBJECT ~A ~A>" (get-id (session obj)) (id obj))))
 
+(defmacro defclass-m (name superclasses slots)
+  (labels ((is-f-class (cls)
+             (gethash-lock cls *exportable-expressions*))
+           (is-f-slot (slt)
+             (getf (cdr slt) :browser-side))
+           (clr-bs (slt)
+             (cons (car slt) (remf (cdr slt) :browser-side))))
+    (let* ((f-super (remove-if-not #'is-f-class superclasses))
+           (o-super (remove-if #'is-f-class superclasses))
+           (f-slots (remove-if-not #'is-f-slot slots))
+           (o-slots (remove-if #'is-f-slot slots))
+           (f-args (remove-if #'null (mapcar
+                                       (lambda (slt)
+                                         (getf (cdr slt) :initarg))
+                                       f-slots))))
+      (map nil #'clr-bs f-slots)
+      (map nil #'clr-bs o-slots)
+      `(progn
+         (defclass ,name ,o-super
+           (,@o-slots
+            (omg-id)
+            (f-init)))
+         (defclass-f ,name ,f-super ,f-slots)
+         (defmethod initialize-instance :after ((obj ,name) &rest args &key &allow-other-keys)
+           (let ((id (+ 1 (* 10 (random 100000000000000)))))
+             (setf (gethash-lock id *remote-objects*) obj)
+             (setf (slot-value obj 'omg-id) id)
+             (setf (slot-value obj 'f-init)
+                   (loop for arg in args by #'cddr
+                         when (position arg ',f-args)
+                         append (list arg (getf args arg))))))
+         (defmethod print-object ((obj ,name) s)
+           (if *in-omg-writer*
+               (let ((name ',name)
+                     (obj-id (slot-value obj 'omg-id))
+                     (f-init (slot-value obj 'f-init)))
+                 (write `(let* ((var (jscl::oget (jscl::%js-vref "self") "OMG" "find_object" ,obj-id))
+                                (var (if var var (make-instance ',name ,@f-init))))
+                           (setf (jscl::oget (jscl::%js-vref "self") "OMG" "objectRegistry" ,obj-id) var)
+                           (setf (jscl::oget var "omgObjId") ,obj-id)
+                           var)
+                        :stream s))
+               (format s "#<~A ~A>" ',name (slot-value obj 'omg-id))))))))
+
+(defmacro defmethod-r (name args &rest body)
+  `(progn
+     (defmethod ,name ,args ,@body)
+     (register-rpc ',name 'defmethod)))
+
 (defun find-session (sid)
   "Return session object with specific ID"
   (gethash-lock sid *session-list*))
@@ -802,10 +853,10 @@ if(!OMG.inServiceWorker) {
     (set-dispatch-macro-character #\# #\Ё
       (lambda (st subch infix)
         (declare (ignore subch st))
-        (let ((fnd (gethash infix *remote-objects*)))
+        (let ((fnd (gethash-lock infix *remote-objects*)))
           (if fnd
               fnd
-              (setf (gethash infix *remote-objects*) (make-instance 'remote-object :id infix))))))
+              (setf (gethash-lock infix *remote-objects*) (make-instance 'remote-object :id infix))))))
     (read-from-string s)))
 
 (defun takit (key res)

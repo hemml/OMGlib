@@ -376,6 +376,32 @@ Also, you can asynchronously call any RPC function using `async-bind` macro:
 
 The preliminary CLOS support is added. You can use `defclass-f`, `defmethod-f` and `defgeneric-f` to create browser-side classes, methods and generics. May be buggy, please report all bugs found. Browser-side methods cannot be invoked directly from the host, use `remote-exec` instead. The CLOS implementation is JSCL is very old and may be obsolete, see JSCL documentation and issues on github. For example there is problems with accessors setf expanders.
 
+#### Mirrored objects
+
+You can declare specific classes and create instances on backend, using `defclass-m` macro:
+
+```
+(defclass-m avatar ()
+  ((xxx :initarg :xxx)
+   (yyy :initarg :yyy
+        :browser-side t)))
+
+(defmethod-r xxx ((obj avatar))
+  (slot-value obj 'xxx))
+
+(defparameter a (make-instance 'avatar :xxx 10 :yyy 20))
+
+(remote-exec `(jslog (xxx ,q)))
+```
+
+Here is a local variable `a`, contains an instance of `avatar` class. This instance can be transferred to the browser-side, where an instance with the same class name will be created. On browser-side only methods marked with `:browser-side t` can be accessible (an they cannot be accessed on backend). All other slots are directly accessible only at backend side. The `defmethod-r` is like `defun-r`, creates a method on the backend, which can be called on browser-side: `(jslog (xxx ,q)))` and executed on the backend with instance `a` in `obj` parameter, so it can be used to access value of the slot `xxx`.
+
+You also can define browser-side methods with `defmethod-f` and they are completely independed from local methods. So, you can define `(defmethod initialize-instance :after ((obj avatar) ...` and `(defmethod-f initialize-instance :after ((obj avatar) ...` simultaneously, one will work on backend, while another will work on frontends.
+
+The mirrored class can inherit other classes, both normal an browser-side ones (like `omg-widget`). The backend class will inherit only local classes from the given list, while browser-side will inherit only classes, declared with `defclass-f` and `defclass-m`.
+
+**WARNING:** the single backend instance can have multiple (one per session) browser-side siblings, they will be created any time, when you use this instance as a parameter for browser-side function. When you create an instance on backend, you can provide initargs also for browser-side slots, like `:yyy 20` in the example. This parameters will be supplied each time when the new browser-side instance is created. Also, you can hook `initialize-instance` method with `defmethod-f`, to perform data synchronization between browser-side and backend instances, if needed. The library itself don't provide any synchronization service, it will only guarantee the connection between backend and frontend instances.  
+
 ### Sessions
 
 Each connected browser starts a new _session_ which is determined by unique random symbol - _session ID_. When RPC-function is called from browser-side, it will be executed in the session context, so, it will execute all bs-functions in the specific browser. You can implicitly set the current session by executing a code inside `with-session` macro:
