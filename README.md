@@ -384,12 +384,14 @@ You can declare specific classes and create instances on backend, using `defclas
 (defclass-m avatar ()
   ((xxx :initarg :xxx)
    (yyy :initarg :yyy
-        :browser-side t)))
+        :browser-side t)
+   (zzz :initarg :zzz
+        :mirrored t)))
 
 (defmethod-r xxx ((obj avatar))
   (slot-value obj 'xxx))
 
-(defparameter a (make-instance 'avatar :xxx 10 :yyy 20))
+(defparameter a (make-instance 'avatar :xxx 10 :yyy 20 :zzz 30))
 
 (remote-exec `(jslog (xxx ,q)))
 ```
@@ -400,7 +402,9 @@ You also can define browser-side methods with `defmethod-f` and they are complet
 
 The mirrored class can inherit other classes, both normal an browser-side ones (like `omg-widget`). The backend class will inherit only local classes from the given list, while browser-side will inherit only classes, declared with `defclass-f` and `defclass-m`.
 
-**WARNING:** the single backend instance can have multiple (one per session) browser-side siblings, they will be created any time, when you use this instance as a parameter for browser-side function. When you create an instance on backend, you can provide initargs also for browser-side slots, like `:yyy 20` in the example. This parameters will be supplied each time when the new browser-side instance is created. Also, you can hook `initialize-instance` method with `defmethod-f`, to perform data synchronization between browser-side and backend instances, if needed. The library itself don't provide any synchronization service, it will only guarantee the connection between backend and frontend instances.  
+**WARNING:** the single backend instance can have multiple (one per session) browser-side siblings, they will be created any time, when you use this instance as a parameter for browser-side function. When you create an instance on backend, you can provide initargs also for browser-side slots, like `:yyy 20` in the example. This parameters will be supplied each time when the new browser-side instance is created. Also, you can hook `initialize-instance` method with `defmethod-f`, to perform data synchronization between browser-side and backend instances, if needed. The library itself don't provide any synchronization service, it will only guarantee the connection between backend and frontend instances.
+
+Slots marked with `:mirrored t` will present both on backend and browser sides. All instances, created on browser-side, will load values on that slots from the backend. But, only on creation time, and there are no backward (browser-to-backend) synchronization.
 
 ### Sessions
 
