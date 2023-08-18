@@ -1163,7 +1163,7 @@ self.addEventListener('fetch', function(e) {
                                                                "\\n"
                                                                (make-string 1 :initial-element #\newline))))
                   (pkg (find-package (car cmd)))
-                  (op (intern (symbol-name (cadr cmd)) pkg))
+                  (op (cadr cmd))
                   (args (caddr cmd))
                   (*current-session* (find-session (intern (symbol-name (cadddr cmd)) :omg))))
               (setf (slot-value *current-session* 'last-active) (get-universal-time))
