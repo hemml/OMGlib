@@ -918,7 +918,7 @@ if(!OMG.inServiceWorker) {
       (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,(intern "omg-rpc-symbol" pkg))))
       (push (bt:make-thread
               (lambda ()
-                (put-wl-result (compile-to-js `(read-from-string ,(omg-write-to-string (apply op args))) pkg) key))
+                (put-wl-result (compile-to-js (apply op args) pkg) key))
               :initial-bindings `((*current-res* . ',key)
                                   (*current-session* . ,*current-session*)
                                   (*in-rpc* . t)))
