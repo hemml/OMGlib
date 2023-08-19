@@ -1275,7 +1275,8 @@ self.addEventListener('fetch', function(e) {
                               (remhash sid *session-list*)
                               (remove-all-listeners (session-ws ses))
                               (unintern sid)))))
-                    (loop for k being each hash-key of *session-list* collect k))
+                    (loop for k being each hash-key of *session-list*
+                      when (typep (gethash-lock k *session-list*) 'remote-object) collect k))
                   (map nil
                     (lambda (thr)
                       (delete thr *omg-thread-list*))
