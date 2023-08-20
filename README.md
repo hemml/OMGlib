@@ -406,6 +406,8 @@ The mirrored class can inherit other classes, both normal an browser-side ones (
 
 Slots marked with `:mirrored t` will present both on backend and browser sides. All instances, created on browser-side, will load values on that slots from the backend. But, only on creation time, and there are no backward (browser-to-backend) synchronization.
 
+The method `(sync-slot (m-object slot))` can be called both on backend and in a browser to synchronize slot value with backend instance. If it called on backend, instances in all active sessions will be updated.
+
 ### Sessions
 
 Each connected browser starts a new _session_ which is determined by unique random symbol - _session ID_. When RPC-function is called from browser-side, it will be executed in the session context, so, it will execute all bs-functions in the specific browser. You can implicitly set the current session by executing a code inside `with-session` macro:

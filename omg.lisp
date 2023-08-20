@@ -29,6 +29,7 @@
            find-session      ;; find session object by ID
            current-session-id  ;; get ID of current session (returns NIL if no session)
            set-debug-session  ;; mark current session as "debug"
+           sync-slot          ;; slot syncronization method for mirrored instances
            in-debug-session ;; execute code in debug session
            thread-in-session)) ;; spawn thread in current session
 
@@ -728,6 +729,19 @@ if(!OMG.inServiceWorker) {
                          when (position arg ',f-args)
                          append (list arg (getf args arg)))))
            (call-next-method))
+         (defmethod-f sync-slot ((obj ,name) slot)
+           (setf (slot-value obj slot) (sync-slot-r obj slot)))
+         ,@(mapcar
+             (lambda (slt)
+               `(progn
+                  (defmethod-r sync-slot-r ((obj ,name) (slot (eql ',(car slt))))
+                    (slot-value obj slot))
+                  (defmethod sync-slot ((obj ,name) (slot (eql ',(car slt))))
+                    (let ((slt-name ',(car slt)))
+                      (with-session nil
+                        (remote-exec `(sync-slot ,obj ',slt-name) :nowait))))))
+             m-slots)
+
          (defmethod print-object ((obj ,name) s)
            (if *in-omg-writer*
                (let ((name ',name)
