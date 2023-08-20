@@ -131,10 +131,10 @@
   (setf (gethash-lock name *exportable-expressions*)
        `(,def ,name (&rest argl)
           (funcall (jscl::oget (jscl::%js-vref "self") "OMG" "RPC")
-                   (write-to-string (list ,(package-name *package*)
-                                          ',name
-                                          argl
-                                          *session-id*))))))
+                   (jscl::omg-write-to-string (list ,(package-name *package*)
+                                                    ',name
+                                                    argl
+                                                    *session-id*))))))
 
 (defmacro defun-r (name args &rest body)
   "Define a server-side function and allow to call it from browser side"
@@ -383,17 +383,23 @@ OMG.register_object=(obj)=>{
 
 OMG.MOPr=jscl.packages.JSCL.symbols['MOP-OBJECT-PRINTER'].fvalue
 OMG.WrStr=jscl.packages.CL.symbols['WRITE-STRING'].fvalue
+OMG.in_omg_write=false
 jscl.packages.JSCL.symbols['MOP-OBJECT-PRINTER'].fvalue=(values,form,stream)=>{
-  const obj_id=OMG.register_object(form)
-  return OMG.WrStr(values,jscl.internals.js_to_lisp('#'+obj_id+'Ё'),stream)
+  if(OMG.in_omg_write) {
+    const obj_id=OMG.register_object(form)
+    return OMG.WrStr(values,jscl.internals.js_to_lisp('#'+obj_id+'Ё'),stream)
+  }
+  return OMG.MOPr(values,form,stream)
 }
 
 OMG.WRAux=jscl.packages.JSCL.symbols['WRITE-AUX'].fvalue
 jscl.packages.JSCL.symbols['WRITE-AUX'].fvalue=(values,form,stream,known_objects,object_ids)=>{
-  const is_js=jscl.packages.JSCL.symbols['JS-OBJECT-P'].fvalue(null,form)
-  if(is_js && typeof(is_js)==='object' && 'name' in is_js && is_js.name==='T') {
-    const obj_id=OMG.register_object(form)
-    return OMG.WrStr(values,jscl.internals.js_to_lisp('#'+obj_id+'Ё'),stream)
+  if(OMG.in_omg_write) {
+    const is_js=jscl.packages.JSCL.symbols['JS-OBJECT-P'].fvalue(null,form)
+    if(is_js && typeof(is_js)==='object' && 'name' in is_js && is_js.name==='T') {
+      const obj_id=OMG.register_object(form)
+      return OMG.WrStr(values,jscl.internals.js_to_lisp('#'+obj_id+'Ё'),stream)
+    }
   }
   return OMG.WRAux(values,form,stream,known_objects,object_ids)
 }
@@ -964,7 +970,7 @@ if(!OMG.inServiceWorker) {
              (sym (cdr (assoc :symbol sem-tim-sym)))
              (takit-sem (make-semaphore))
              (mcod (compile-to-js
-                      `(write-to-string (apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))
+                      `(jscl::omg-write-to-string (apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))
                        (symbol-package sym))))
         (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
         (setf (gethash-lock cur-res *gimme-wait-list*)
@@ -993,7 +999,10 @@ if(!OMG.inServiceWorker) {
            (sem-tim-sym (gethash-lock *current-res* *gimme-wait-list*))
            (sem (cdr (assoc :sem sem-tim-sym)))
            (takit-sem (make-semaphore))
-           (mcod (compile-to-js `(write-to-string ,cmd) *package*)))
+           (mcod (compile-to-js (if nowait
+                                    cmd
+                                    `(jscl::omg-write-to-string ,cmd))
+                                *package*)))
       (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-tim-sym)))
       (setf (gethash-lock cur-res *gimme-wait-list*)
             `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
@@ -1013,7 +1022,10 @@ if(!OMG.inServiceWorker) {
                            (sock-state (ready-state sock))
                            (key (random-key wlist |sid-length|))
                            (sem (if nowait nil (make-semaphore)))
-                           (rcmd (compile-to-js `(write-to-string (multiple-value-list ,cmd)) *package*))
+                           (rcmd (compile-to-js (if nowait
+                                                    cmd
+                                                    `(jscl::omg-write-to-string (multiple-value-list ,cmd)))
+                                                *package*))
                            (pkgname (package-name *package*))
                            (pkg-hook (if *local-compile*
                                           ""
@@ -1066,6 +1078,11 @@ if(!OMG.inServiceWorker) {
   (setf (slot-value *current-session* 'last-active) (get-universal-time))
   (remote-exec `(if (not *boot-done*)
                     (progn
+                      (defun jscl::omg-write-to-string (form)
+                        (prog2
+                          (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") t)
+                          (write-to-string form)
+                          (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") (jscl::lisp-to-js nil))))
                       (defparameter *session-id* ',(get-id *current-session*))
                       (setf (jscl::oget (jscl::%js-vref "self") "OMG" "session_id") ,(symbol-name (get-id *current-session*)))
                       (setf *boot-done* t)
