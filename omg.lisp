@@ -366,7 +366,8 @@ OMG.inServiceWorker=(OMG.inWorker&&(typeof XMLHttpRequest==='undefined'))
 OMG.objectRegistry={}
 
 OMG.find_object=(id)=>{
-  return OMG.objectRegistry[id]
+  if(id in OMG.objectRegistry) return OMG.objectRegistry[id]
+  return false
 }
 
 OMG.register_object=(obj)=>{
@@ -734,15 +735,17 @@ if(!OMG.inServiceWorker) {
                      (f-init (slot-value obj 'f-init))
                      (m-init (mapcar
                                (lambda (slt)
-                                 `(setf (slot-value var ',(car slt))
+                                 `(setf (slot-value nvar ',(car slt))
                                         ,(omg-data-to-compile-form (slot-value obj (car slt)))))
                                ',m-slots)))
-                 (write `(let* ((var (jscl::oget (jscl::%js-vref "self") "OMG" "find_object" ,obj-id))
-                                (var (if var var (make-instance ',name ,@f-init))))
-                           (setf (jscl::oget (jscl::%js-vref "self") "OMG" "objectRegistry" ,obj-id) var)
-                           (setf (jscl::oget var "omgObjId") ,obj-id)
-                           ,@m-init
-                           var)
+                 (write `(let* ((ovar ((jscl::oget (jscl::%js-vref "self") "OMG" "find_object") ,obj-id))
+                                (nvar (if ovar ovar (make-instance ',name ,@f-init))))
+                           (if (not ovar)
+                               (progn
+                                 (setf (jscl::oget (jscl::%js-vref "self") "OMG" "objectRegistry" ,obj-id) nvar)
+                                 (setf (jscl::oget nvar "omgObjId") ,obj-id)
+                                 ,@m-init))
+                           nvar)
                         :stream s))
                (format s "#<~A ~A>" ',name (slot-value obj 'omg-id))))))))
 
