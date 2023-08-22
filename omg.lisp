@@ -296,9 +296,14 @@
               (,op ,name ,val)
               (remote-unintern ',name)))))
 
+(defvar *classes-f-slots* (make-hash-table))
+(defvar *classes-f-superclasses* (make-hash-table))
+
 (defmacro defclass-f (name sup slots)
   (let ((f-form `(defclass ,name ,sup ,slots))
         (tmp (gensym)))
+    (setf (gethash name *classes-f-slots*) slots)
+    (setf (gethash name *classes-f-superclasses*) sup)
     `(let ((,tmp (jscl::with-compilation-environment     ;; We need to compile defclass locally
                    (jscl::compile-toplevel ',f-form))))  ;;    to proper setup jscl compilation environment
        (declare (ignore ,tmp))
@@ -689,6 +694,9 @@ if(!OMG.inServiceWorker) {
          (list 'quote form))
         (t form)))
 
+(defmethod print-m-slots-init (obj nvar s)
+  nil)
+
 (defmacro defclass-m (name superclasses slots)
   (labels ((is-f-class (cls)
              (gethash-lock cls *exportable-expressions*))
@@ -704,14 +712,20 @@ if(!OMG.inServiceWorker) {
              (remf (cdr slt) :browser-side)
              (remf (cdr slt) :mirrored)))
     (let* ((f-super (remove-if-not #'is-f-class superclasses))
-           (o-super (remove-if #'is-f-class superclasses))
+           (o-super (remove-if-not (lambda (cls)
+                                     (find-class cls nil))
+                                   superclasses))
            (f-slots (remove-if-not #'is-f-slot slots))
            (m-slots (remove-if-not #'is-m-slot slots))
            (o-slots (remove-if-not #'is-o-slot slots))
+           (all-f-slots (labels ((get-f-slts (cls)
+                                   (append (gethash cls *classes-f-slots*)
+                                           (mapcan #'get-f-slts (gethash cls *classes-f-superclasses*)))))
+                          (remove-duplicates (append f-slots (get-f-slts name)) :key #'car)))
            (f-args (remove-if #'null (mapcar
                                        (lambda (slt)
                                          (getf (cdr slt) :initarg))
-                                       f-slots))))
+                                       all-f-slots))))
       (map nil #'clr-bs f-slots)
       (map nil #'clr-bs o-slots)
       (map nil #'clr-bs m-slots)
@@ -744,23 +758,27 @@ if(!OMG.inServiceWorker) {
                         (remote-exec `(sync-slot ,obj ',slt-name) :nowait))))))
              m-slots)
 
+         (defmethod print-m-slots-init :around ((obj ,name) nvar s)
+            `(,@(if (next-method-p)
+                    (call-next-method))
+              ,@(mapcar
+                  (lambda (slt)
+                    `(setf (slot-value ,nvar ',(car slt))
+                           ,(omg-data-to-compile-form (slot-value obj (car slt)))))
+                  ',m-slots)))
+
          (defmethod print-object ((obj ,name) s)
            (if *in-omg-writer*
                (let ((name ',name)
                      (obj-id (slot-value obj 'omg-id))
-                     (f-init (slot-value obj 'f-init))
-                     (m-init (mapcar
-                               (lambda (slt)
-                                 `(setf (slot-value nvar ',(car slt))
-                                        ,(omg-data-to-compile-form (slot-value obj (car slt)))))
-                               ',m-slots)))
+                     (f-init (slot-value obj 'f-init)))
                  (write `(let* ((ovar ((jscl::oget (jscl::%js-vref "self") "OMG" "find_object") ,obj-id))
                                 (nvar (if ovar ovar (make-instance ',name ,@f-init))))
                            (if (not ovar)
                                (progn
                                  (setf (jscl::oget (jscl::%js-vref "self") "OMG" "objectRegistry" ,obj-id) nvar)
                                  (setf (jscl::oget nvar "omgObjId") ,obj-id)
-                                 ,@m-init))
+                                 ,@(print-m-slots-init obj 'nvar s)))
                            nvar)
                         :stream s))
                (format s "#<~A ~A>" ',name (slot-value obj 'omg-id))))))))
