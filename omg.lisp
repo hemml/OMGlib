@@ -685,7 +685,7 @@ if(!OMG.inServiceWorker) {
 (defmethod print-object ((obj remote-object) s)
   (if *in-omg-writer*
       (write `((jscl::oget (jscl::%js-vref "self") "OMG" "find_object") ,(id obj)) :stream s)
-      (format s "#<REMOTE-JS-OBJECT ~A ~A>" (get-id (session obj)) (id obj))))
+      (format s "#<REMOTE-JS-OBJECT ~A ~A>" (if (session obj) (get-id (session obj)) nil) (id obj))))
 
 (defun omg-data-to-compile-form (form)
   (cond ((listp form)
