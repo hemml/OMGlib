@@ -132,10 +132,10 @@
   (setf (gethash-lock name *exportable-expressions*)
        `(,def ,name (&rest argl)
           (funcall (jscl::oget (jscl::%js-vref "self") "OMG" "RPC")
-                   (jscl::omg-write-to-string (list ,(package-name *package*)
-                                                    ',name
-                                                    argl
-                                                    *session-id*))))))
+                   (jscl::omg-write-to-string *session-id*
+                                              ,(package-name *package*)
+                                              (list ',name argl))))))
+
 
 (defmacro defun-r (name args &rest body)
   "Define a server-side function and allow to call it from browser side"
@@ -889,9 +889,10 @@ if(!OMG.inServiceWorker) {
     (setf (gethash-lock key *gimme-wait-list*) `((:result . ,res) (:time . ,time)))
     (signal-semaphore sem)))
 
-(defun omg-write-to-string (form)
+(defun omg-write-to-string (&rest forms)
   (let ((*in-omg-writer* t))
-    (write-to-string form)))
+    (with-output-to-string (s)
+      (map nil (lambda (f) (print f s)) forms))))
 
 (defun compile-to-js (code pkg)
   "Return JS for the code, pkg is current package for compilation context."
@@ -912,7 +913,7 @@ if(!OMG.inServiceWorker) {
                   (concatenate 'string "jscl.evaluateString(" rcode ")"))))
      res))
 
-(defun omg-read-from-string (s)
+(defun omg-read (s)
   (let ((*readtable* (copy-readtable))
         (*read-eval* nil))
     (set-dispatch-macro-character #\# #\Ё
@@ -921,8 +922,14 @@ if(!OMG.inServiceWorker) {
         (let ((fnd (gethash-lock infix *remote-objects*)))
           (if fnd
               fnd
-              (setf (gethash-lock infix *remote-objects*) (make-instance 'remote-object :id infix))))))
-    (read-from-string s)))
+              (setf (gethash-lock infix *remote-objects*) (make-instance 'remote-object :id infix :session *current-session*))))))
+    (read s)))
+
+
+
+(defun omg-read-from-string (s)
+  (with-input-from-string (st s)
+    (omg-read st)))
 
 (defun takit (key res)
   "The handler for takit-requests. This requests are used to return macro expansion results from browser-side"
@@ -1115,11 +1122,12 @@ if(!OMG.inServiceWorker) {
   (setf (slot-value *current-session* 'last-active) (get-universal-time))
   (remote-exec `(if (not *boot-done*)
                     (progn
-                      (defun jscl::omg-write-to-string (form)
-                        (prog2
+                      (defun jscl::omg-write-to-string (&rest forms)
+                        (with-output-to-string (s)
                           (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") t)
-                          (write-to-string form)
-                          (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") (jscl::lisp-to-js nil))))
+                          (map nil (lambda (f) (print f s)) forms)
+                          (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") (jscl::lisp-to-js nil))
+                          s))
                       (defparameter *session-id* ',(get-id *current-session*))
                       (setf (jscl::oget (jscl::%js-vref "self") "OMG" "session_id") ,(symbol-name (get-id *current-session*)))
                       (setf *boot-done* t)
@@ -1237,20 +1245,18 @@ self.addEventListener('fetch', function(e) {
            `(200 (:content-type "text/html; charset=utf-8") (,(get-root-html))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path*))
                 (getf env :content-length))
-           (let* ((rcmd (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
+           (with-input-from-string (s (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
                                           "\\n"
                                           (make-string 1 :initial-element #\newline)))
-                  (cmd (omg-read-from-string rcmd))
-                  (pkg (find-package (car cmd)))
-                  (*package* pkg)
-                  (cmd (omg-read-from-string rcmd)) ;; do it again with a proper package
-                  (op (cadr cmd))
-                  (args (caddr cmd))
-                  (*current-session* (find-session (intern (symbol-name (cadddr cmd)) :omg))))
-             (setf (slot-value *current-session* 'last-active) (get-universal-time))
-             (if (gethash-lock op *rpc-functions*)
-               (rpc-wrapper op args pkg)
-              `(404 (:content-type "text/plain; charset=utf-8") ("")))))
+             (let* ((*current-session* (find-session (intern (symbol-name (read s)) :omg)))
+                    (*package* (find-package (read s)))
+                    (cmd (omg-read s))
+                    (op (car cmd))
+                    (args (cadr cmd)))
+               (setf (slot-value *current-session* 'last-active) (get-universal-time))
+               (if (gethash-lock op *rpc-functions*)
+                 (rpc-wrapper op args *package*)
+                `(404 (:content-type "text/plain; charset=utf-8") (""))))))
           ((and (equal uri (concatenate 'string *root-path* *gimme-path*))
                 (getf env :content-length))
            (let* ((str (get-str-from (getf env :raw-body) (getf env :content-length)))
