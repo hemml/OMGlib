@@ -697,6 +697,10 @@ if(!OMG.inServiceWorker) {
 (defmethod print-m-slots-init (obj nvar s)
   nil)
 
+(defvar *m-initialized* nil)
+
+(defvar *m-classess* (list))
+
 (defmacro defclass-m (name superclasses slots)
   (labels ((is-f-class (cls)
              (gethash-lock cls *exportable-expressions*))
@@ -725,17 +729,34 @@ if(!OMG.inServiceWorker) {
            (f-args (remove-if #'null (mapcar
                                        (lambda (slt)
                                          (getf (cdr slt) :initarg))
-                                       all-f-slots))))
+                                       all-f-slots)))
+           (has-m-super (notany #'null (mapcar (lambda (cls) (position cls *m-classess*)) superclasses))))
+      (setf (gethash name *classes-f-superclasses*) f-super) ;;  defclass-f macros may not be evaluated immediately
+      (push name *m-classess*)
       (map nil #'clr-bs f-slots)
       (map nil #'clr-bs o-slots)
       (map nil #'clr-bs m-slots)
       `(progn
+         (if (not *m-initialized*)
+             (progn
+               (defclass-f mirrored-object ()
+                 ((omg-id :initarg :omg-internal-id)))
+               (defmethod-f initialize-instance :after ((obj mirrored-object) &rest args)
+                 (setf (jscl::oget (jscl::%js-vref "self") "OMG" "objectRegistry" (slot-value obj 'omg-id)) obj)
+                 (setf (jscl::oget obj "omgObjId") (slot-value obj 'omg-id)))
+               (setf *m-initialized* t)))
+
          (defclass ,name ,o-super
            (,@o-slots
             ,@m-slots
             (omg-id)
             (f-init)))
-         (defclass-f ,name ,f-super (,@f-slots ,@m-slots))
+
+         (defclass-f ,name (,@(if (not has-m-super) '(mirrored-object))
+                            ,@f-super)
+           (,@f-slots
+            ,@m-slots))
+
          (defmethod initialize-instance :around ((obj ,name) &rest args &key &allow-other-keys)
            (let ((id (+ 1 (* 10 (random 100000000000000)))))
              (setf (gethash-lock id *remote-objects*) obj)
@@ -745,6 +766,7 @@ if(!OMG.inServiceWorker) {
                          when (position arg ',f-args)
                          append (list arg (getf args arg)))))
            (call-next-method))
+
          (defmethod-f sync-slot ((obj ,name) slot)
            (setf (slot-value obj slot) (sync-slot-r obj slot)))
          ,@(mapcar
@@ -772,14 +794,12 @@ if(!OMG.inServiceWorker) {
                (let ((name ',name)
                      (obj-id (slot-value obj 'omg-id))
                      (f-init (slot-value obj 'f-init)))
-                 (write `(let* ((ovar ((jscl::oget (jscl::%js-vref "self") "OMG" "find_object") ,obj-id))
-                                (nvar (if ovar ovar (make-instance ',name ,@f-init))))
-                           (if (not ovar)
-                               (progn
-                                 (setf (jscl::oget (jscl::%js-vref "self") "OMG" "objectRegistry" ,obj-id) nvar)
-                                 (setf (jscl::oget nvar "omgObjId") ,obj-id)
-                                 ,@(print-m-slots-init obj 'nvar s)))
-                           nvar)
+                 (write `(let* ((ovar ((jscl::oget (jscl::%js-vref "self") "OMG" "find_object") ,obj-id)))
+                           (if ovar
+                               ovar
+                               (let ((nvar (make-instance ',name :omg-internal-id ,obj-id ,@f-init)))
+                                 ,@(print-m-slots-init obj 'nvar s)
+                                 nvar)))
                         :stream s))
                (format s "#<~A ~A>" ',name (slot-value obj 'omg-id))))))))
 
