@@ -259,21 +259,28 @@
                                 (if pos
                                     `(progn ,@(subseq defs 0 pos) ,',f-form ,@(subseq defs (+ pos 1)))
                                     `(progn ,@defs ,',f-form)))))
-                    (if (and classes (is-system-pkg (symbol-package ',name)))
-                        (progn
-                          (jscl::with-compilation-environment  ;; We need to compile specific methods locally to proper setup jscl clos environment
-                            (jscl::compile-toplevel ',f-form))
-                          (map nil
-                            (lambda (cls)
-                              (pushnew ',f-form (gethash-lock cls *exported-classes-methods*)))
-                            classes)
-                          (remote-update-methods ',name classes)))
-                    (if (intersection (gethash-lock ',name *accessor-classes*)
-                                      (concatenate 'list classes (mapcan #'get-all-sup classes)))
-                        (map nil
-                          (lambda (cls)
-                            (pushnew ',f-form (gethash-lock cls *exported-classes-methods*)))
-                          classes))))
+                    (labels ((replace-method (cls)
+                               (setf (gethash-lock cls *exported-classes-methods*)
+                                     (cons ',f-form
+                                           (remove-if
+                                             (lambda (rec)
+                                               (and (equal 'defmethod (car rec))
+                                                    (equal ',name (cadr rec))
+                                                    (or (and (listp (caddr rec))
+                                                             (tree-equal (caddr rec) ',clos-args))
+                                                        (and (symbolp (caddr rec))
+                                                             (tree-equal (cons (caddr rec) (cadddr rec))
+                                                                         ',clos-args)))))
+                                             (gethash-lock cls *exported-classes-methods*))))))
+                      (if (and classes (is-system-pkg (symbol-package ',name)))
+                          (progn
+                            (jscl::with-compilation-environment  ;; We need to compile specific methods locally to proper setup jscl clos environment
+                              (jscl::compile-toplevel ',f-form))
+                            (map nil #'replace-method classes)
+                            (remote-update-methods ',name classes)))
+                      (if (intersection (gethash-lock ',name *accessor-classes*)
+                                        (concatenate 'list classes (mapcan #'get-all-sup classes)))
+                          (map nil #'replace-method classes)))))
                 (t `(progn
                       (setf (gethash-lock ',ex-sym *exportable-expressions*) ',f-form)
                       (defmacro ,name (&rest args)
