@@ -132,9 +132,10 @@
   (setf (gethash-lock name *exportable-expressions*)
        `(,def ,name (&rest argl)
           (funcall (jscl::oget (jscl::%js-vref "self") "OMG" "RPC")
-                   (jscl::omg-write-to-string *session-id*
-                                              ,(package-name *package*)
-                                              (list ',name argl))))))
+                   (let ((*package* (find-package ,(package-name *package*))))
+                     (jscl::omg-write-to-string *session-id*
+                                                ,(package-name *package*)
+                                                (list ',name argl)))))))
 
 
 (defmacro defun-r (name args &rest body)
