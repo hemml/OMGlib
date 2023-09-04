@@ -926,18 +926,15 @@ if(!OMG.inServiceWorker) {
 (defun compile-to-js (code pkg)
   "Return JS for the code, pkg is current package for compilation context."
   (let* ((*package* pkg)
-         (c1 (omg-write-to-string
-               `(let ((*package* (find-package (intern ,(package-name pkg) :keyword))))
-                  ,code)))
-         (compile-local *local-compile*)
-         (code (if compile-local
+         (c1 (omg-write-to-string code))
+         (code (if *local-compile*
                    (jscl::with-compilation-environment
-                     (jscl::compile-toplevel (jscl::ls-read-from-string c1) t t))
+                      (jscl::compile-toplevel (jscl::ls-read-from-string c1) t t))
                    c1))
-         (rcode (if compile-local
+         (rcode (if *local-compile*
                     (replace-all (replace-all (replace-all (replace-all code "\\" "\\\\") (string #\linefeed) "\\n") (string #\return) "\\\\r") "\"" "\\\"")
                     (replace-all (replace-all code (string #\linefeed) " ") (string #\return) " ")))
-         (res (if compile-local
+         (res (if *local-compile*
                   (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(\"" rcode "\"))")
                   (concatenate 'string "jscl.evaluateString(" rcode ")"))))
      res))
