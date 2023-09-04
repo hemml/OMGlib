@@ -134,8 +134,8 @@
        `(,def ,name (&rest argl)
           (funcall (jscl::oget (jscl::%js-vref "self") "OMG" "RPC")
                    (let ((*package* (find-package ,(package-name *package*))))
-                     (jscl::omg-write-to-string *session-id*
-                                                ,(package-name *package*)
+                     (jscl::omg-write-to-string (intern (jscl::oget (jscl::%js-vref "self") "OMG" "session_id") :OMG)
+                                                (intern ,(package-name *package*))
                                                 (list ',name argl)))))))
 
 
@@ -380,6 +380,11 @@ OMG.inServiceWorker=(OMG.inWorker&&(typeof XMLHttpRequest==='undefined'))
 
 OMG.objectRegistry={}
 
+OMG.get_session_id=()=>{
+  if(OMG.session_id) return 'OMG::'+OMG.session_id
+  return 'OMG::NO-SESSION'
+}
+
 OMG.find_object=(id)=>{
   if(id in OMG.objectRegistry) return OMG.objectRegistry[id]
   return false
@@ -441,13 +446,15 @@ if(!OMG.inServiceWorker) {
   OMG.OriginalSymbolValue=jscl.internals.symbolValue
   jscl.internals.symbolValue=(symbol)=>{
     if(symbol.package) {
-      const full_name=symbol.package.packageName+':'+symbol.name
+      const full_name=symbol.package.packageName+'::'+symbol.name
       if(symbol.value===undefined&&symbol.package.omgPkg&&!OMG.InFetch[full_name]) {
         //console.log('SYMVALUE FETCH:', full_name)
         OMG.InFetch[full_name]=true
         let xhr=new XMLHttpRequest()
         xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
-        xhr.send(full_name)
+        xhr.send(OMG.get_session_id()+' '+
+                 jscl.packages.CL.symbols['*PACKAGE*'].value.packageName+
+                 ' '+full_name)
         if (xhr.status === 200) {
           eval(xhr.response)
         } else {
@@ -461,13 +468,15 @@ if(!OMG.inServiceWorker) {
   OMG.OriginalIntern=jscl.internals.intern
 
   OMG.Fetch=(sym)=>{
-    const full_name=sym.package.packageName+':'+sym.name
+    const full_name=sym.package.packageName+'::'+sym.name
     //console.log('FVALUE FETCH:',full_name)
     if(!OMG.InFetch[full_name]) {
       OMG.InFetch[full_name]=true
       let xhr=new XMLHttpRequest()
       xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
-      xhr.send(full_name)
+      xhr.send(OMG.get_session_id()+' '+
+               jscl.packages.CL.symbols['*PACKAGE*'].value.packageName+
+               ' '+full_name)
       if (xhr.status === 200) {
         //console.log(xhr.response)
         eval(xhr.response)
@@ -507,7 +516,7 @@ if(!OMG.inServiceWorker) {
       OMG.MakePackage(package_name)
     }
     let sym=OMG.OriginalIntern(name, package_name)
-    const full_name=package_name+':'+name
+    const full_name=package_name+'::'+name
     if('package' in sym&&sym.package.omgPkg&&sym.value===undefined&&
        !jscl.internals.fboundp(sym)&&!OMG.InFetch[full_name]) {
       sym.fvalue=OMG.FetchFvalue(sym)
@@ -569,11 +578,13 @@ if(!OMG.inServiceWorker) {
     const set_name = '(SETF_'+fn.car.name+')'
     if('car' in fn && 'name' in fn.car && 'package' in fn.car && fn.car.package.omgPkg && !(set_name in fn.car.package.symbols)) {
       //console.log('NEED FETCH:',set_name, fn.car.package.packageName)
-      const full_name=fn.car.package.packageName+':'+set_name
+      const full_name=fn.car.package.packageName+'::'+set_name
       OMG.InFetch[full_name]=true
       let xhr=new XMLHttpRequest()
       xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
-      xhr.send(full_name)
+      xhr.send(OMG.get_session_id()+' '+
+               jscl.packages.CL.symbols['*PACKAGE*'].value.packageName+
+               ' '+full_name)
       if (xhr.status === 200) {
         eval(xhr.response)
       } else {
@@ -921,7 +932,7 @@ if(!OMG.inServiceWorker) {
 (defun omg-write-to-string (&rest forms)
   (let ((*in-omg-writer* t))
     (with-output-to-string (s)
-      (map nil (lambda (f) (print f s)) forms))))
+      (map nil (lambda (f) (write f :stream s)) forms))))
 
 (defun compile-to-js (code pkg)
   "Return JS for the code, pkg is current package for compilation context."
@@ -963,10 +974,8 @@ if(!OMG.inServiceWorker) {
     (if (and sem-dat-sym (assoc :sem sem-dat-sym))
       (let ((newsem (make-semaphore)))
         (setf (gethash-lock key *takit-wait-list*)
-              (let ((*package* (symbol-package (cdr (assoc :symbol sem-dat-sym))))
-                    (*read-eval* nil))
-                `((:result . ,(omg-read-from-string res))
-                  ,(assoc :time sem-dat-sym))))
+              `((:result . ,res)
+                ,(assoc :time sem-dat-sym)))
         (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,newsem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-dat-sym)))
         (signal-semaphore (cdr (assoc :sem sem-dat-sym)))
         (wait-on-semaphore newsem)
@@ -1045,7 +1054,9 @@ if(!OMG.inServiceWorker) {
         (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
         (setf (gethash-lock cur-res *gimme-wait-list*)
               `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
-                                                             "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
+                                                             "xhr.send(OMG.get_session_id()+' '+"
+                                                                      "jscl.packages.CL.symbols['*PACKAGE*'].value.packageName+"
+                                                                      "' OMG::~A '+(~A));if(xhr.status===200){eval(xhr.response);}else"
                                                              "{throw new Error('Cannot fetch symbol (takit fails).');}")
                                         (symbol-name cur-res)
                                         mcod))
@@ -1076,7 +1087,9 @@ if(!OMG.inServiceWorker) {
       (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-tim-sym)))
       (setf (gethash-lock cur-res *gimme-wait-list*)
             `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
-                                                           "xhr.send('~A'+(~A));if(xhr.status===200){eval(xhr.response);}else"
+                                                           "xhr.send(OMG.get_session_id()+' '+"
+                                                                    "jscl.packages.CL.symbols['*PACKAGE*'].value.packageName+"
+                                                                    "' OMG::~A '+(~A));if(xhr.status===200){eval(xhr.response);}else"
                                                            "{throw new Error('Cannot fetch symbol (takit fails).');}")
                                       (symbol-name cur-res)
                                       mcod))
@@ -1154,12 +1167,14 @@ if(!OMG.inServiceWorker) {
                           (map nil (lambda (f) (print f s)) forms)
                           (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") (jscl::lisp-to-js nil))
                           s))
-                      (defparameter *session-id* ',(get-id *current-session*))
                       (setf (jscl::oget (jscl::%js-vref "self") "OMG" "session_id") ,(symbol-name (get-id *current-session*)))
                       (setf *boot-done* t)
                       ,@*pre-boot-functions*
                       ,@*boot-functions*
-                      nil))
+                      nil)
+                    (if (fboundp 'sync-all-data)
+                        (sync-all-data)))
+
                :nowait))
 
 (defun make-ws (env)
@@ -1274,26 +1289,39 @@ self.addEventListener('fetch', function(e) {
            (with-input-from-string (s (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
                                           "\\n"
                                           (make-string 1 :initial-element #\newline)))
-             (let* ((*current-session* (find-session (intern (symbol-name (read s)) :omg)))
-                    (*package* (find-package (read s)))
+             (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
+                    (*current-session* (find-session session-id))
+                    (*package* (find-package (omg-read s)))
                     (cmd (omg-read s))
                     (op (car cmd))
                     (args (cadr cmd)))
-               (setf (slot-value *current-session* 'last-active) (get-universal-time))
+               (if (not (equal session-id 'no-session))
+                   (setf (slot-value *current-session* 'last-active) (get-universal-time)))
                (if (gethash-lock op *rpc-functions*)
                  (rpc-wrapper op args *package*)
                 `(404 (:content-type "text/plain; charset=utf-8") (""))))))
           ((and (equal uri (concatenate 'string *root-path* *gimme-path*))
                 (getf env :content-length))
-           (let* ((str (get-str-from (getf env :raw-body) (getf env :content-length)))
-                  (pos (position #\: str))
-                  (pkg (find-package (subseq str 0 pos))))
-             (gimme (intern (subseq str (+ 1 pos)) pkg))))
+           (let ((str (get-str-from (getf env :raw-body) (getf env :content-length))))
+             (with-input-from-string (s str)
+               (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
+                      (*current-session* (find-session session-id))
+                      (*package* (find-package (omg-read s)))
+                      (sym (omg-read s)))
+                 (if (not (equal session-id 'no-session))
+                     (setf (slot-value *current-session* 'last-active) (get-universal-time)))
+                 (if (symbolp sym)
+                     (gimme sym))))))
           ((and (equal uri (concatenate 'string *root-path* *takit-path*))
                 (getf env :content-length))
-           (let* ((str (get-str-from (getf env :raw-body) (getf env :content-length))))
-             (takit (intern (subseq str 0 |sid-length|) :omg)
-                    (subseq str |sid-length|))))
+           (let ((str (get-str-from (getf env :raw-body) (getf env :content-length))))
+             (with-input-from-string (s str)
+               (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
+                      (*current-session* (find-session session-id))
+                      (*package* (find-package (omg-read s))))
+                 (if (not (equal session-id 'no-session))
+                     (setf (slot-value *current-session* 'last-active) (get-universal-time)))
+                 (takit (omg-read s) (omg-read s))))))
           ((equal uri (concatenate 'string *root-path* *ws-path*))
            (let ((ws (make-ws env)))
              (lambda (responder)
