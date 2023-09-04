@@ -984,39 +984,41 @@ if(!OMG.inServiceWorker) {
 
 (defun gimme (sym)
   "The handler for gimme-requests, which are used to request unknown symbols from the server-side."
-  (let* ((datp (gethash-lock sym *exportable-expressions*))
-         (auto-funcs (if (and (listp datp)
-                              (equal 'defclass (car datp)))
-                         (remove-duplicates
-                           (gethash-lock sym *exported-classes-methods*)))))
-    (if datp
-       (let* ((dat (if (boundp sym)
-                       (list (car datp) (cadr datp)
-                         (let ((sv (symbol-value sym)))
-                           (if (listp sv)
-                               `(quote ,sv)
-                               sv)))
-                       datp))
-              (sem (make-semaphore))
-              (key (random-key *gimme-wait-list* |sid-length|)))
-          (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
-          (push (bt:make-thread
-                   (lambda ()
-                     (put-wl-result
-                       (format nil "{~A};~{{~A}~^;~}"
-                         (compile-to-js dat (symbol-package sym))
-                         (mapcar (lambda (f)
-                                   (compile-to-js f (symbol-package sym)))
-                                 auto-funcs))
-                       key))
-                   :initial-bindings `((*current-res* . ',key)))
-                *omg-thread-list*)
-          (wait-on-semaphore sem)
-          (let ((res (cdr (assoc :result (gethash-lock key *gimme-wait-list*)))))
-             (remhash key *gimme-wait-list*)
-             (unintern key)
-            `(200 (:content-type "text/plain; charset=utf-8") (,res))))
-       `(404 (:content-type "text/plain; charset=utf-8") ("")))))
+  (multiple-value-bind (datp fnd) (gethash-lock sym *exportable-expressions*)
+    (if fnd
+        (let* ((auto-funcs (if (and (listp datp)
+                                    (equal 'defclass (car datp)))
+                               (remove-duplicates
+                                 (gethash-lock sym *exported-classes-methods*)))))
+          (if datp
+             (let* ((dat (if (boundp sym)
+                             (list (car datp) (cadr datp)
+                               (let ((sv (symbol-value sym)))
+                                 (if (listp sv)
+                                     `(quote ,sv)
+                                     sv)))
+                             datp))
+                    (sem (make-semaphore))
+                    (key (random-key *gimme-wait-list* |sid-length|)))
+                (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
+                (push (bt:make-thread
+                         (lambda ()
+                           (put-wl-result
+                             (format nil "{~A};~{{~A}~^;~}"
+                               (compile-to-js dat (symbol-package sym))
+                               (mapcar (lambda (f)
+                                         (compile-to-js f (symbol-package sym)))
+                                       auto-funcs))
+                             key))
+                         :initial-bindings `((*current-res* . ',key)
+                                             (*current-session* . ,*current-session*)))
+                      *omg-thread-list*)
+                (wait-on-semaphore sem)
+                (let ((res (cdr (assoc :result (gethash-lock key *gimme-wait-list*)))))
+                   (remhash key *gimme-wait-list*)
+                   (unintern key)
+                  `(200 (:content-type "text/plain; charset=utf-8") (,res))))))
+        `(404 (:content-type "text/plain; charset=utf-8") ("")))))
 
 (defun rpc-wrapper (op args pkg)
   "The wrapper for RPC requests, used to allow call browser-side functions from RPC funcs."
