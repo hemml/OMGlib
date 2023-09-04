@@ -13,6 +13,7 @@
                (:file "omg")
                (:file "omgdaemon" :depends-on ("omg"))
                (:file "omgui" :depends-on ("omg" "omgdaemon"))
+               (:file "omgutil" :depends-on ("omg"))
                (:file "omgwidgets" :depends-on ("omg" "omgui"))))
 
 (defparameter *jscl-dir* (merge-pathnames (make-pathname :directory '(:relative "jscl"))

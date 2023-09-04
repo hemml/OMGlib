@@ -13,7 +13,6 @@
            kill-server       ;; kill a http(s)-server
            restart-server    ;; restart a http(s)-server
            defclass-f        ;; define a browser-side class
-           defclass-m        ;; define a both-side class
            defun-f           ;; define a browser-side function
            defmacro-f        ;; define a browser-side macro
            defmethod-f       ;; define a browser-side method
@@ -29,7 +28,6 @@
            find-session      ;; find session object by ID
            current-session-id  ;; get ID of current session (returns NIL if no session)
            set-debug-session  ;; mark current session as "debug"
-           sync-slot          ;; slot syncronization method for mirrored instances
            in-debug-session ;; execute code in debug session
            thread-in-session)) ;; spawn thread in current session
 
@@ -718,10 +716,19 @@ if(!OMG.inServiceWorker) {
   nil)
 
 (defvar *m-initialized* nil)
-
 (defvar *m-classess* (list))
 
-(defmacro defclass-m (name superclasses slots)
+(defun scope-session (obj scope)
+  (if (and (equal scope :auto)
+           (slot-boundp obj 'scope)
+           (not (slot-value obj 'scope)))
+      nil
+      *current-session*))
+
+(defvar *m-scopes* (make-hash-table))
+(defvar *m-scope-funcs* (make-hash-table))
+
+(defmacro defclass-m (name superclasses slots &rest options)
   (labels ((is-f-class (cls)
              (gethash-lock cls *exportable-expressions*))
            (is-f-slot (slt)
@@ -750,83 +757,104 @@ if(!OMG.inServiceWorker) {
                                        (lambda (slt)
                                          (getf (cdr slt) :initarg))
                                        all-f-slots)))
-           (has-m-super (notany #'null (mapcar (lambda (cls) (position cls *m-classess*)) superclasses))))
+           (has-m-super (notany #'null (mapcar (lambda (cls) (position cls *m-classess*)) superclasses)))
+           (class-scope (getf options :scope
+                          (let ((vrs (remove-duplicates (remove-if #'null (mapcar (lambda (cls)
+                                                                                    (gethash-lock cls *m-scopes*))
+                                                                                  o-super)))))
+                            (if vrs
+                                (if (cdr vrs)
+                                    (error (format nil "No default scope defined for m-class ~A and multiple different scopes found for superclasses" name))
+                                    (car vrs))
+                                :auto)))))
+
       (setf (gethash name *classes-f-superclasses*) f-super) ;;  defclass-f macros may not be evaluated immediately
       (push name *m-classess*)
       (map nil #'clr-bs f-slots)
       (map nil #'clr-bs o-slots)
       (map nil #'clr-bs m-slots)
       `(progn
-         (if (not *m-initialized*)
-             (progn
-               (defclass-f mirrored-object ()
-                 ((omg-id :initarg :omg-internal-id)))
-               (defmethod-f initialize-instance :after ((obj mirrored-object) &rest args)
-                 (setf (jscl::oget (jscl::%js-vref "self") "OMG" "objectRegistry" (slot-value obj 'omg-id)) obj)
-                 (setf (jscl::oget obj "omgObjId") (slot-value obj 'omg-id)))
-               (setf *m-initialized* t)))
-
          (defclass ,name ,o-super
            (,@o-slots
             ,@m-slots
             (omg-id)
-            (f-init)))
+            (f-init)
+            (scope)))
 
          (defclass-f ,name (,@(if (not has-m-super) '(mirrored-object))
                             ,@f-super)
            (,@f-slots
             ,@m-slots))
 
-         (defmethod initialize-instance :around ((obj ,name) &rest args &key &allow-other-keys)
-           (let ((id (+ 1 (* 10 (random 100000000000000)))))
-             (setf (gethash-lock id *remote-objects*) obj)
-             (setf (slot-value obj 'omg-id) id)
-             (setf (slot-value obj 'f-init)
-                   (loop for arg in args by #'cddr
-                         when (position arg ',f-args)
-                         append (list arg (getf args arg)))))
-           (call-next-method))
+        (setf (gethash-lock ',name *m-scopes*) ,class-scope)
+        (setf (gethash-lock ',name *m-scope-funcs*)
+              (lambda (obj)
+                ,(cond ((functionp class-scope)
+                        `(funcall ,class-scope obj))
+                       ((or (equal :session class-scope)
+                            (equal :auto class-scope))
+                        `(scope-session obj ,class-scope))
+                       (t (error (format nil "Invalid m-class scope: ~A" class-scope))))))
 
-         (defmethod-f sync-slot ((obj ,name) slot)
-           (setf (slot-value obj slot) (sync-slot-r obj slot)))
-         ,@(mapcar
-             (lambda (slt)
-               `(progn
-                  (defmethod-r sync-slot-r ((obj ,name) (slot (eql ',(car slt))))
-                    (slot-value obj slot))
-                  (defmethod sync-slot ((obj ,name) (slot (eql ',(car slt))))
-                    (let ((slt-name ',(car slt)))
-                      (with-session nil
-                        (remote-exec `(sync-slot ,obj ',slt-name) :nowait))))))
-             m-slots)
+        (defmethod initialize-instance :around ((obj ,name) &rest args &key &allow-other-keys)
+          ,(if (equal class-scope :session)
+               `(if (equal *current-session* nil)
+                    (error "Trying to create instance with :sesson scope while not in session")))
+          (setf (slot-value obj 'scope) (funcall (gethash-lock ',name *m-scope-funcs*) obj))
+          (let ((id (+ 1 (* 10 (random 100000000000000)))))
+            (setf (gethash-lock id *remote-objects*) obj)
+            (setf (slot-value obj 'omg-id) id)
+            (setf (slot-value obj 'f-init)
+                  (loop for arg in args by #'cddr
+                        when (position arg ',f-args)
+                        append (list arg (getf args arg)))))
+          (call-next-method))
 
-         (defmethod print-m-slots-init :around ((obj ,name) nvar s)
-            `(,@(if (next-method-p)
-                    (call-next-method))
-              ,@(mapcar
-                  (lambda (slt)
-                    `(setf (slot-value ,nvar ',(car slt))
-                           ,(omg-data-to-compile-form (slot-value obj (car slt)))))
-                  ',m-slots)))
+        (defmethod-f sync-slot ((obj ,name) slot)
+          (setf (slot-value obj slot) (sync-slot-r obj slot)))
+        ,@(mapcar
+            (lambda (slt)
+              `(progn
+                 (defmethod-r sync-slot-r ((obj ,name) (slot (eql ',(car slt))))
+                   (slot-value obj slot))
+                 (defmethod sync-slot ((obj ,name) (slot (eql ',(car slt))))
+                   (let ((slt-name ',(car slt))
+                         (scf (gethash-lock ',name *m-scope-funcs*)))
+                     (loop for *current-session* being the hash-values of *session-list* do
+                       (if (equal (slot-value obj 'scope) (funcall scf obj))
+                           (remote-exec `(sync-slot ,obj ',slt-name) :nowait)))))))
+            m-slots)
 
-         (defmethod print-object ((obj ,name) s)
-           (if *in-omg-writer*
-               (let ((name ',name)
-                     (obj-id (slot-value obj 'omg-id))
-                     (f-init (slot-value obj 'f-init)))
-                 (write `(let* ((ovar ((jscl::oget (jscl::%js-vref "self") "OMG" "find_object") ,obj-id)))
-                           (if ovar
-                               ovar
-                               (let ((nvar (make-instance ',name :omg-internal-id ,obj-id ,@f-init)))
-                                 ,@(print-m-slots-init obj 'nvar s)
-                                 nvar)))
-                        :stream s))
-               (format s "#<~A ~A>" ',name (slot-value obj 'omg-id))))))))
+        (defmethod print-m-slots-init :around ((obj ,name) nvar s)
+           `(,@(if (next-method-p)
+                   (call-next-method))
+             ,@(mapcar
+                 (lambda (slt)
+                   `(setf (slot-value ,nvar ',(car slt))
+                          ,(omg-data-to-compile-form (slot-value obj (car slt)))))
+                 ',m-slots)))
+
+        (defmethod print-object ((obj ,name) s)
+          (if *in-omg-writer*
+              (let ((name ',name)
+                    (obj-id (slot-value obj 'omg-id))
+                    (f-init (slot-value obj 'f-init)))
+                (if (equal (slot-value obj 'scope) (funcall (gethash-lock ',name *m-scope-funcs*) obj))
+                    (write `(let* ((ovar ((jscl::oget (jscl::%js-vref "self") "OMG" "find_object") ,obj-id)))
+                              (if ovar
+                                  ovar
+                                  (let ((nvar (make-instance ',name :omg-internal-id ,obj-id ,@f-init)))
+                                    ,@(print-m-slots-init obj 'nvar s)
+                                    nvar)))
+                           :stream s)
+                    (error "Trying to send an instance to invalid scope")))
+              (format s "#<~A ~A>" ',name (slot-value obj 'omg-id))))))))
 
 (defmacro defmethod-r (name args &rest body)
   `(progn
      (defmethod ,name ,args ,@body)
      (register-rpc ',name 'defmethod)))
+
 
 (defun find-session (sid)
   "Return session object with specific ID"

@@ -378,7 +378,7 @@ The preliminary CLOS support is added. You can use `defclass-f`, `defmethod-f` a
 
 #### Mirrored objects
 
-You can declare specific classes and create instances on backend, using `defclass-m` macro:
+You can declare specific classes and create instances on backend, using `defclass-m` macro, which is defined in `omgutil` package:
 
 ```
 (defclass-m avatar ()
@@ -407,6 +407,11 @@ The mirrored class can inherit other classes, both normal an browser-side ones (
 Slots marked with `:mirrored t` will present both on backend and browser sides. All instances, created on browser-side, will load values on that slots from the backend. But, only on creation time, and there are no backward (browser-to-backend) synchronization.
 
 The method `(sync-slot (m-object slot))` can be called both on backend and in a browser to synchronize slot value with backend instance. If it called on backend, instances in all active sessions will be updated.
+
+#### Data synchronization between objects
+
+The `OMG` library provides a special m-class `data-sync`, defined in `omgutil` package. This class provides a notification mechanism for browser-side instances of mirrored objects. This class don't provides any real syncronization and even don't specify data storage itself. After each data update, you must call `sync-data` method on backend providing the m-instance as a parameter.  If the browser loses it's server connection, the `sync-data` method will be called after reconnection for all instances of `data-sync` which needed. To make it useful, you have to subclass `data-sync` class, providing a data storage slots and addind `sync-data :after` browser-side method, to perform a real data synchronization.
+
 
 ### Sessions
 
