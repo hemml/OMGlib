@@ -61,10 +61,11 @@
 (defvar *omg-thread-list* nil)
 
 (defun gethash-lock (key hash)
-  (if *giant-hash-lock*
-      (bt:with-lock-held (*giant-hash-lock*)
-        (gethash key hash))
-      (gethash key hash)))
+  (apply #'values
+        (if *giant-hash-lock*
+            (bt:with-lock-held (*giant-hash-lock*)
+              (multiple-value-list (gethash key hash)))
+            (multiple-value-list (gethash key hash)))))
 
 (defun (setf gethash-lock) (val key hash)
   (if *giant-hash-lock*
