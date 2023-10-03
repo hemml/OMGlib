@@ -965,7 +965,7 @@ if(!OMG.inServiceWorker) {
 (defun compile-to-js (code pkg)
   "Return JS for the code, pkg is current package for compilation context."
   (let* ((*package* pkg)
-         (c1 (omg-write-to-string code))
+         (c1 (omg-write-to-string `(let ((*package* (find-package ,(package-name pkg)))) ,code)))
          (code (if *local-compile*
                    (jscl::with-compilation-environment
                       (jscl::compile-toplevel (jscl::ls-read-from-string c1) t t))
@@ -1085,7 +1085,7 @@ if(!OMG.inServiceWorker) {
         (setf (gethash-lock cur-res *gimme-wait-list*)
               `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
                                                              "xhr.send(OMG.get_session_id()+' '+"
-                                                                      "jscl.packages.CL.symbols['*PACKAGE*'].value.packageName+"
+                                                                      "\"" (package-name (symbol-package sym)) "\"+"
                                                                       "' OMG::~A '+(~A));if(xhr.status===200){eval(xhr.response);}else"
                                                              "{throw new Error('Cannot fetch symbol (takit fails).');}")
                                         (symbol-name cur-res)
