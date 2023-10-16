@@ -15,6 +15,7 @@
            defclass-f        ;; define a browser-side class
            defun-f           ;; define a browser-side function
            defmacro-f        ;; define a browser-side macro
+           def-local-macro-f ;; define a browser-side macro, but executing locally
            defmethod-f       ;; define a browser-side method
            defmethod-r       ;; define a rpc method for both-side classess
            defgeneric-f      ;; define a browser-side generic
@@ -189,108 +190,115 @@
     (if scls
         (append scls (mapcan #'get-all-sup scls)))))
 
-(defmacro make-def-macro-f (op)
+(defparameter *disable-remote-macro* nil)
+
+(defmacro make-def-macro-f (op1)
   "Just a macro to generate macros for f-functions and f-macros definintions (defun-f, defmacro-f, etc...)"
-  `(defmacro ,(read-from-string (format nil "~a-f" op)) (name args &rest body)
-     (let* ((op ',op)
-            (clos-args (if (and (equal 'defmethod op)
-                                (not (listp args)))
-                           (cons args (car body))
-                           args))
-            (is-setf (and (listp name) (equal (car name) 'setf)))
-            (ex-sym (if is-setf
-                        (intern (format nil "(SETF_~A)" (symbol-name (cadr name)))
-                                *package*)
-                        name))
-            (f-form `(,op ,name ,args ,@body))
-            (macro-hook (if (equal ',op 'defmacro) ;; Macro require an injection into JSCL lexenv
-                            (let ((ar (gensym)))
-                               `((jscl::%compile-defmacro ',name
-                                   (lambda (,ar) (exec-remote-macro ',name ,ar)))))
-                            nil))
-            (lam (if is-setf (gensym)))
-            (args2 (if is-setf
-                        (mapcar (lambda (a)
-                                  (declare (ignore a))
-                                  `(quote ,(gensym)))
-                                args)))
-            (asym (gensym))
-            (a2sym (gensym))
-            (bdsym (gensym)))
-       `(progn
-         ,@macro-hook
-         (remhash ',ex-sym *rpc-functions*) ;; Unregister possible RPC function with the same name
-         (remote-unintern ',ex-sym) ;; unintern the function in all connected browsers
-         ,(cond (is-setf
-                 `(let* ((,asym ',args)
-                         (,bdsym ',body)
-                         (,a2sym (list ,@args2))
-                         (,lam (lambda ,(cdr args)
-                                 (values
-                                  (list ,@(cdr args2))
-                                  (list ,@(cdr args))
-                                  (list ,(car args2))
-                                  `(apply (lambda ,,asym ,@,bdsym)
-                                          (list ,@,a2sym))
-                                  (list ',(cdr name) ,@(cdr args2))))))
-                     (if (assoc ',(cadr name) jscl::*setf-expanders*)
-                         (setf (cdr (assoc ',(cadr name) jscl::*setf-expanders*)) ,lam)
-                         (push (cons ',(cadr name) ,lam) jscl::*setf-expanders*))))
-                ((or (equal ',op 'defmethod)
-                     (equal ',op 'defgeneric))
-                 `(let* ((classes (remove-duplicates
-                                    (remove-if-not
-                                      (lambda (cls)
-                                        (gethash-lock cls *exportable-expressions*))
-                                      (mapcar #'cadr (remove-if-not #'listp ',clos-args))))))
-                    (if (not (find ',name *exported-function-names*))
-                        (progn
-                          (push ',name *exported-function-names*)
-                          (setf (gethash-lock ',ex-sym *exportable-expressions*) (list 'progn ',f-form)))
-                        (let* ((defs (cdr (gethash-lock ',ex-sym *exportable-expressions*)))
-                               (pos (position ',clos-args
-                                              defs :test
-                                              #'tree-equal ;; FIXME: need to compare lambda lists here, not just to use #'tree-equal
-                                              :key (lambda (l)
-                                                     (if (listp (caddr l))
-                                                         (caddr l)
-                                                         (cons (caddr l) (cadddr l)))))))
-                          (setf (gethash-lock ',ex-sym *exportable-expressions*)
-                                (if pos
-                                    `(progn ,@(subseq defs 0 pos) ,',f-form ,@(subseq defs (+ pos 1)))
-                                    `(progn ,@defs ,',f-form)))))
-                    (labels ((replace-method (cls)
-                               (setf (gethash-lock cls *exported-classes-methods*)
-                                     (cons ',f-form
-                                           (remove-if
-                                             (lambda (rec)
-                                               (and (equal 'defmethod (car rec))
-                                                    (equal ',name (cadr rec))
-                                                    (or (and (listp (caddr rec))
-                                                             (tree-equal (caddr rec) ',clos-args))
-                                                        (and (symbolp (caddr rec))
-                                                             (tree-equal (cons (caddr rec) (cadddr rec))
-                                                                         ',clos-args)))))
-                                             (gethash-lock cls *exported-classes-methods*))))))
-                      (if (and classes (is-system-pkg (symbol-package ',name)))
-                          (progn
-                            (jscl::with-compilation-environment  ;; We need to compile specific methods locally to proper setup jscl clos environment
-                              (jscl::compile-toplevel ',f-form))
-                            (map nil #'replace-method classes)
-                            (remote-update-methods ',name classes)))
-                      (if (intersection (gethash-lock ',name *accessor-classes*)
-                                        (concatenate 'list classes (mapcan #'get-all-sup classes)))
-                          (map nil #'replace-method classes)))))
-                (t `(progn
-                      (setf (gethash-lock ',ex-sym *exportable-expressions*) ',f-form)
-                      (defmacro ,name (&rest args)
-                         (if *in-f-macro*
-                            `',(cons ',name (mapcar #'f-eval args))
-                            (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
-                               `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
+  (let ((op (if (equal op1 'def-local-macro) 'defmacro op1)))
+    `(defmacro ,(read-from-string (format nil "~a-f" op1)) (name args &rest body)
+       (let* ((op ',op)
+              (clos-args (if (and (equal 'defmethod op)
+                                  (not (listp args)))
+                             (cons args (car body))
+                             args))
+              (is-setf (and (listp name) (equal (car name) 'setf)))
+              (ex-sym (if is-setf
+                          (intern (format nil "(SETF_~A)" (symbol-name (cadr name)))
+                                  *package*)
+                          name))
+              (f-form `(,op ,name ,args ,@body))
+              (macro-hook (if (equal ',op 'defmacro) ;; Macro require an injection into JSCL lexenv
+                              (let ((ar (gensym)))
+                                `((jscl::%compile-defmacro ',name
+                                    (lambda (,ar)
+                                      ; (exec-remote-macro ',name ,ar)))))))
+                                      ,(if (or *disable-remote-macro*
+                                               (equal ',op1 'def-local-macro))
+                                           `(apply (lambda ,args ,@body) ,ar)
+                                           `(exec-remote-macro ',name ,ar))))))))
+              (lam (if is-setf (gensym)))
+              (args2 (if is-setf
+                          (mapcar (lambda (a)
+                                    (declare (ignore a))
+                                    `(quote ,(gensym)))
+                                  args)))
+              (asym (gensym))
+              (a2sym (gensym))
+              (bdsym (gensym)))
+         `(progn
+           ,@macro-hook
+           (remhash ',ex-sym *rpc-functions*) ;; Unregister possible RPC function with the same name
+           (remote-unintern ',ex-sym) ;; unintern the function in all connected browsers
+           ,(cond (is-setf
+                   `(let* ((,asym ',args)
+                           (,bdsym ',body)
+                           (,a2sym (list ,@args2))
+                           (,lam (lambda ,(cdr args)
+                                   (values
+                                    (list ,@(cdr args2))
+                                    (list ,@(cdr args))
+                                    (list ,(car args2))
+                                    `(apply (lambda ,,asym ,@,bdsym)
+                                            (list ,@,a2sym))
+                                    (list ',(cdr name) ,@(cdr args2))))))
+                       (if (assoc ',(cadr name) jscl::*setf-expanders*)
+                           (setf (cdr (assoc ',(cadr name) jscl::*setf-expanders*)) ,lam)
+                           (push (cons ',(cadr name) ,lam) jscl::*setf-expanders*))))
+                  ((or (equal ',op 'defmethod)
+                       (equal ',op 'defgeneric))
+                   `(let* ((classes (remove-duplicates
+                                      (remove-if-not
+                                        (lambda (cls)
+                                          (gethash-lock cls *exportable-expressions*))
+                                        (mapcar #'cadr (remove-if-not #'listp ',clos-args))))))
                       (if (not (find ',name *exported-function-names*))
-                          (push ',name *exported-function-names*)))))
-         ',name))))
+                          (progn
+                            (push ',name *exported-function-names*)
+                            (setf (gethash-lock ',ex-sym *exportable-expressions*) (list 'progn ',f-form)))
+                          (let* ((defs (cdr (gethash-lock ',ex-sym *exportable-expressions*)))
+                                 (pos (position ',clos-args
+                                                defs :test
+                                                #'tree-equal ;; FIXME: need to compare lambda lists here, not just to use #'tree-equal
+                                                :key (lambda (l)
+                                                       (if (listp (caddr l))
+                                                           (caddr l)
+                                                           (cons (caddr l) (cadddr l)))))))
+                            (setf (gethash-lock ',ex-sym *exportable-expressions*)
+                                  (if pos
+                                      `(progn ,@(subseq defs 0 pos) ,',f-form ,@(subseq defs (+ pos 1)))
+                                      `(progn ,@defs ,',f-form)))))
+                      (labels ((replace-method (cls)
+                                 (setf (gethash-lock cls *exported-classes-methods*)
+                                       (cons ',f-form
+                                             (remove-if
+                                               (lambda (rec)
+                                                 (and (equal 'defmethod (car rec))
+                                                      (equal ',name (cadr rec))
+                                                      (or (and (listp (caddr rec))
+                                                               (tree-equal (caddr rec) ',clos-args))
+                                                          (and (symbolp (caddr rec))
+                                                               (tree-equal (cons (caddr rec) (cadddr rec))
+                                                                           ',clos-args)))))
+                                               (gethash-lock cls *exported-classes-methods*))))))
+                        (if (and classes (is-system-pkg (symbol-package ',name)))
+                            (progn
+                              (jscl::with-compilation-environment  ;; We need to compile specific methods locally to proper setup jscl clos environment
+                                (jscl::compile-toplevel ',f-form))
+                              (map nil #'replace-method classes)
+                              (remote-update-methods ',name classes)))
+                        (if (intersection (gethash-lock ',name *accessor-classes*)
+                                          (concatenate 'list classes (mapcan #'get-all-sup classes)))
+                            (map nil #'replace-method classes)))))
+                  (t `(progn
+                        (setf (gethash-lock ',ex-sym *exportable-expressions*) ',f-form)
+                        (defmacro ,name (&rest args)
+                           (if *in-f-macro*
+                              `',(cons ',name (mapcar #'f-eval args))
+                              (let ((*in-f-macro* t)) ;; Evaluate all -f functions and macros on the browser-side
+                                 `(remote-exec ',(cons ',name (mapcar #'f-eval args))))))
+                        (if (not (find ',name *exported-function-names*))
+                            (push ',name *exported-function-names*)))))
+           ',name)))))
 
 (defmacro make-var-macro-f (op)
   "A macro for variables-parameters-constants definitions"
@@ -332,6 +340,7 @@
 
 (make-def-macro-f defun)    ;; defun-f
 (make-def-macro-f defmacro) ;; defmacro-f
+(make-def-macro-f def-local-macro) ;; defmacro-f
 (make-def-macro-f defmethod) ;; defmethod-f
 (make-def-macro-f defgeneric) ;; defgeneric-f
 

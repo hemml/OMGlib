@@ -328,7 +328,7 @@ and add it to the page:
 There are the following macros to define browser-side functions, macros and variables:
 
 - `defun-f`
-- `defmacro-f`
+- `defmacro-f` and `def-local-macro-f`
 - `defvar-f`
 - `defparameter-f`
 
@@ -356,6 +356,8 @@ The library determines which symbols must be fetched from backend just by their 
 ### Browser-side macros
 
 Browser-side macros are called while code is compiled to JS and must be evaluated on the browser side. So, if you are use such macros while the `omg::*local-compile*` is set to `T` (by default), JSCL will parse the code and execute code of each macro in the browser, get the results and finish the compilation using them. This means that while local compilation is enabled, macro expansion will be rather expensive, especially, if you are using recursive macros. Also, all of the macro output must be transferred from the browser to the host, so you cannot use just `(gensym)` to generate temporary symbols, they are must be interned to be properly transferred. Intern all of your symbols manually or just use helper function `(gensym2)` from OMGUI package.
+
+You can disable this behavior by setting `omg::*disable-remote-macro*` to `t`, or by using `def-local-macro-f` - in this case the code of macros will be executed locally (on the backend).
 
 ### Browser-side variables and parameters
 
