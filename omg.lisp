@@ -563,9 +563,9 @@ if(!OMG.inServiceWorker) {
   OMG.OriginalFP=jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue
   jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue=(values,pkg)=>{
     let res=OMG.OriginalFP(values,pkg)
-    if(!OMG.InMakePackage&&typeof(pkg)==='object'&&typeof(res)==='object'&&res.name==='NIL'&&res.package.packageName==='CL') {
-      OMG.MakePackage(pkg.name)
-      res=OMG.OriginalFP(values,pkg)
+    if(!OMG.InMakePackage&&typeof(res)==='object'&&res.name==='NIL'&&res.package.packageName==='CL') {
+      OMG.MakePackage(jscl.internals.lisp_to_js(pkg))
+      res=OMG.OriginalFP(values,pkg )
     }
     return res
   }
