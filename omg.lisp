@@ -468,7 +468,7 @@ if(!OMG.inServiceWorker) {
         if (xhr.status === 200) {
           eval(xhr.response)
         } else {
-          throw new Error('Cannot fetch symbol '+name)
+          throw new Error('Cannot fetch symbol '+symbol.name)
         }
       }
     }
