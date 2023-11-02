@@ -1350,7 +1350,7 @@ self.addEventListener('fetch', function(e) {
                       (*current-session* (find-session session-id))
                       (*package* (find-package (omg-read s)))
                       (sym (omg-read s)))
-                 (if (not (equal session-id 'no-session))
+                 (if (and *current-session* (not (equal session-id 'no-session)))
                      (setf (slot-value *current-session* 'last-active) (get-universal-time)))
                  (if (symbolp sym)
                      (gimme sym))))))
