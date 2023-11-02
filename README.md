@@ -668,10 +668,12 @@ Also, two useful macros are presented:
 
 You can kill the webworker with method `kill`:
 
+```
 (bind-exit-values-for ()
   (run-in-web-worker ww
     (some-code))
   (kill ww)) ;; Kill the worker after completion
+```
 
 **WARINING:** The WebWorker code is not well tested, so bugs (especially in different browsers) may exists. Use with caution! Also, be careful with main thread lambdas - if such lambda throws an exception, the worker will hang, consuming some CPU permanently (al least in the current Firefox). Chrome has strange issues with massive parallel worker jobs, they are much slower when running in Firefox. All other browsers are not tested yet, sorry.
 
