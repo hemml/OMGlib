@@ -565,6 +565,8 @@ In the following macro the utility functions `jslog`, `respond-with` and `defaul
 
 ### Classic WebWorker
 
+**NB:** To use Web Workers you have to open your web-page via SSL.
+
 You can run (almost) any code in a separate WebWorker threads, utilizing poor JS multiprocessing capabilities. The macro `omgui:run-in-web-worker` doing the job:
 
 ```
