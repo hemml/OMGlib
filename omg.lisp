@@ -49,6 +49,7 @@
 (defvar *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
 (defvar *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
 (defvar *service-worker-path* "sw") ;; path to the service worker code
+(defvar *web-worker-path* "ww") ;; path to the web worker code
 (defvar *port* 7500) ;; default server port
 
 (defvar *use-wss* nil) ;; if T -- use wss:// protocol for websocket
@@ -382,6 +383,7 @@ self.OMG=OMG
 
 OMG.session_id=false
 
+OMG.PersistentCache=false
 OMG.inWorker=(typeof window==='undefined')
 OMG.inServiceWorker=(OMG.inWorker&&(typeof XMLHttpRequest==='undefined'))
 
@@ -456,6 +458,7 @@ if(!OMG.inServiceWorker) {
       const full_name=symbol.package.packageName+'::'+symbol.name
       if(symbol.value===undefined&&symbol.package.omgPkg&&!OMG.InFetch[full_name]) {
         //console.log('SYMVALUE FETCH:', full_name)
+        if(OMG.symbolValueFetchHandler) return OMG.symbolValueFetchHandler(symbol)
         OMG.InFetch[full_name]=true
         let xhr=new XMLHttpRequest()
         xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
@@ -570,10 +573,12 @@ if(!OMG.inServiceWorker) {
     return res
   }
 
+  OMG.disableLIL=false
+
   OMG.OriginalLIL=jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue
   jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue=(mv,name,lexenv,ns)=>{
     let res=OMG.OriginalLIL(mv,name,lexenv,ns)
-    if(ns.name==='FUNCTION' && 'package' in name && name.package.omgPkg && 'name' in res && res.name==='NIL') {
+    if(!OMG.disableLIL && ns.name==='FUNCTION' && 'package' in name && name.package.omgPkg && 'name' in res && res.name==='NIL') {
       OMG.Fetch(name)
       res=OMG.OriginalLIL(mv,name,lexenv,ns)
     }
@@ -1301,6 +1306,20 @@ self.addEventListener('fetch', function(e) {
 
 "))
 
+(defun get-worker-js ()
+  (concatenate 'string
+    "
+   self.Deno=1; // Just a fake to disable JSCL worker code
+    "
+    (get-main-js)
+    "
+self.addEventListener('message', (currentEvent)=>{
+  jscl.internals.globalEval(currentEvent.data)
+})
+self.postMessage('BOOT')
+"))
+
+
 (defvar *user-uri-handler* (lambda (env)
                              (declare (ignore env))
                              '(404 (:content-type "text/plain") ("File not found"))))
@@ -1320,12 +1339,21 @@ self.addEventListener('fetch', function(e) {
                 :Cross-Origin-Opener-Policy "same-origin"
                 :Cross-Origin-Embedder-Policy "require-corp")
                (,(get-service-worker-js))))
+          ((equal uri (concatenate 'string *root-path* *web-worker-path*))
+           `(200
+               (:content-type "text/javascript; charset=utf-8"
+                :Cross-Origin-Opener-Policy "same-origin"
+                :Cross-Origin-Embedder-Policy "require-corp")
+               (,(get-worker-js))))
           ((equal uri (concatenate 'string *root-path* *js-path*))
            `(200
                (:content-type "text/javascript; charset=utf-8")
                (,(get-main-js))))
           ((equal uri (concatenate 'string *root-path* *html-path*))
-           `(200 (:content-type "text/html; charset=utf-8") (,(get-root-html))))
+           `(200 (:content-type "text/html; charset=utf-8"
+                  :Cross-Origin-Opener-Policy "same-origin"
+                  :Cross-Origin-Embedder-Policy "require-corp")
+                 (,(get-root-html))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path*))
                 (getf env :content-length))
            (with-input-from-string (s (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))

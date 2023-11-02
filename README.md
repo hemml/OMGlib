@@ -563,6 +563,116 @@ You can use ServiceWorker to catch and handle network requests with the followin
 
 In the following macro the utility functions `jslog`, `respond-with` and `default-action` are pre-defined, for your convenience. You can use this macro multiple times, to add several handlers, just don't forget to call `(default-action)` if the request is not handled.
 
+### Classic WebWorker
+
+You can run (almost) any code in a separate WebWorker threads, utilizing poor JS multiprocessing capabilities. The macro `omgui:run-in-web-worker` doing the job:
+
+```
+(run-in-web-worker (make-instance 'classic-worker)
+  (jslog "I'm in the worker!"))
+```
+
+The first parameter is a `classic-worker` instance or `nil`. In the second case a free webworker (if any) will be got from the pool or a new one will be started (and will go into the pool after). The macro returns the `classic-worker` instance itself.
+The code inside the macro will be executed in a webworker context, but all global and local variables will be available to it. This is one-way availability, any changes performed in main context (if you are not using the caching, see below) will be visible in workers, but if you modify a variable in a worker, it will not be modified in other contexts. After the modification the variable will be "detached" from the main context and worker will not see any its changes anymore.
+
+The function `test` will print "3" in console:
+```
+(defparameter-f x 1)
+
+(defun-f test ()
+  (let ((y 2)) ;; Yes, local variables are also visible!
+    (run-in-web-worker nil
+      (jslog (+ x y)))))
+    ;; Here the execution continues, without waiting for worker code completion
+```
+
+To get return values from the webworker, you have to register a callback function with `bind-exit-values-for` macro:
+
+```
+(bind-exit-values-for (x y z)
+  (run-in-web-worker nil
+    (values 1 2 3)))
+  (jslog x y z) ;; The "1 2 3" will be printed when the worker ends execution
+```
+
+You can call main thread lambdas from a webworker, but you have to register them before with `register-main-lambda` and pass:
+
+```
+(let ((l1 (lambda (x y)
+            (jslog "Adding" x "and" y) ;; This will be printed in main thread
+            (+ x y))))
+  (register-main-lambda l1)
+  (run-in-web-worker nil
+    (jslog "The main thread returns:" (funcall l1 1 2))))          
+```
+
+Ofcourse, the only way to pass data to such lambda is parameters, it will be executed in real main-thread context, all varaibles, modified in the worker, will not be visible.
+
+#### Data transferring and caching
+
+The variables visibility between main thread and webworker is achieved by implicit data transfer from main thread to webworker, when you trying to access a variable. This may be an expensive process when data is large, and there are some limitations. The only numbers, strings, symbols, conses (and lists), arrays and MOP-objects are transferred. Lambdas (except ones, registered with `register-main-lambda`) and DOM-objects will be replaced by `nil`, all other types will cause a error. MOP instances are just transferred as a set of their slots, so a new MOP object will be created in webworker (with `allocate-instance`) and all its slots will be filled by the data. Conses, lists, arrays and strings are re-created each time when transferred, so, if you modify their parts, the modifications will gone if you are not using caching.
+
+You can cache the data by yourself:
+
+```
+(let ((x '(1 2 3 4 5)))
+  (run-in-web-worker nil
+    (let ((x x)) ;; The caching, by creating a new variable
+      (setf (car x) 100) ;; The modification will persist
+      (format t "~A" x))) ;; (100 2 3 4 5) will be printed as expected
+  (run-in-web-worker nil
+    (setf (car x) 100)
+    (format t "~A" x))) ;; (1 2 3 4 5) will be printed here, because x will be requested each time from the main thread
+```
+
+Or you can use `cache-vars` pseudo-function as a first element of the code:
+
+```
+(let ((x '(1 2 3 4 5)))
+  (run-in-web-worker nil
+    (cache-vars x) ;; Instruct the system to cache x variable
+    (setf (car x) 100)
+    (format t "~A" x))) ;; (100 2 3 4 5) will be printed
+```
+
+Also you can use `(cache-vars t)` to cache all variables.
+
+The `classic-worker` instance will have no internal state by default, all variables, cached or not, will be reset each time, when you use the same instance multiple times. You can disable this behavior, by setting `:persistent-cache t` when creating the instance:
+
+```
+(let ((ww (make-instance 'classic-worker :persistent-cache t))
+      (x 100))
+  (bind-exit-values-for () ;; Use just to execute a code when worker completes
+    (run-in-web-worker ww
+      (jslog x) ;; 100 will be printed
+      (setf x 200))
+    (progn
+      (setf x 300)
+      (run-in-web-worker ww
+        (jslog x))))) ;; 200 will be printed
+```
+
+The caching can improve the performance drastically sometimes.
+
+Also, two useful macros are presented:
+
+```
+(when-worker-free ww
+  (some-code)) ;; The code will be executed when worker will finish the job (if any)
+
+(when-worker-ready ww
+  (some-code)) ;; The code will be executed when worker is spawned
+```
+
+You can kill the webworker with method `kill`:
+
+(bind-exit-values-for ()
+  (run-in-web-worker ww
+    (some-code))
+  (kill ww)) ;; Kill the worker after completion
+
+**WARINING:** The WebWorker code is not well tested, so bugs (especially in different browsers) may exists. Use with caution! Also, be careful with main thread lambdas - if such lambda throws an exception, the worker will hang, consuming some CPU permanently (al least in the current Firefox). Chrome has strange issues with massive parallel worker jobs, they are much slower when running in Firefox. All other browsers are not tested yet, sorry.
+
 ## OMG daemon mode
 
 **WARNING:** the following functionality is in early alpha version now, it will work only in POSIX compatible environments (Linux, MacOS X) and only with `SBCL`, but easely can be ported to another CL compilers.
