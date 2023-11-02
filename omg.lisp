@@ -972,17 +972,24 @@ if(!OMG.inServiceWorker) {
     (signal-semaphore sem)))
 
 (defun omg-write-to-string (&rest forms)
-  (let ((*in-omg-writer* t))
+  (let ((*in-omg-writer* t)
+        (*print-circle* t))
     (with-output-to-string (s)
       (map nil (lambda (f) (write f :stream s)) forms))))
 
 (defun compile-to-js (code pkg)
   "Return JS for the code, pkg is current package for compilation context."
   (let* ((*package* pkg)
-         (c1 (omg-write-to-string `(let ((*package* (find-package ,(package-name pkg)))) ,code)))
+         (c1 (omg-write-to-string `(let ((*package* (find-package ,(package-name pkg)))
+                                         (*print-circle* t))
+                                     ,code)))
          (code (if *local-compile*
                    (jscl::with-compilation-environment
-                      (jscl::compile-toplevel (jscl::ls-read-from-string c1) t t))
+                      (let ((jscl::*macroexpander-cache* (make-hash-table :test #'eq))) ;; workaround for JSCL macroexpander race condition
+                        (jscl::compile-toplevel
+                          (let ((jscl::*labelled-objects* nil))   ;; workaround for JSCL reader race condition
+                            (jscl::ls-read-from-string c1))
+                          t t)))
                    c1))
          (rcode (if *local-compile*
                     (replace-all (replace-all (replace-all (replace-all code "\\" "\\\\") (string #\linefeed) "\\n") (string #\return) "\\\\r") "\"" "\\\"")
@@ -1207,10 +1214,11 @@ if(!OMG.inServiceWorker) {
                     (progn
                       (defun jscl::omg-write-to-string (&rest forms)
                         (with-output-to-string (s)
-                          (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") t)
-                          (map nil (lambda (f) (print f s)) forms)
-                          (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") (jscl::lisp-to-js nil))
-                          s))
+                          (let ((*print-circle* t))
+                            (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") t)
+                            (map nil (lambda (f) (print f s)) forms)
+                            (setf (jscl::oget (jscl::%js-vref "self") "OMG" "in_omg_write") (jscl::lisp-to-js nil))
+                            s)))
                       (setf (jscl::oget (jscl::%js-vref "self") "OMG" "session_id") ,(symbol-name (get-id *current-session*)))
                       (setf *boot-done* t)
                       ,@*pre-boot-functions*
