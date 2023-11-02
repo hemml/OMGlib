@@ -48,7 +48,7 @@
 (defvar *rpc-path* "r") ;; rpc call path (relative to *root-path*)
 (defvar *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
 (defvar *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
-(defvar *service-worker-path* "w") ;; path to the service worker code
+(defvar *service-worker-path* "sw") ;; path to the service worker code
 (defvar *port* 7500) ;; default server port
 
 (defvar *use-wss* nil) ;; if T -- use wss:// protocol for websocket
@@ -1315,7 +1315,10 @@ self.addEventListener('fetch', function(e) {
         (*read-eval* nil))
     (cond ((equal uri (concatenate 'string *root-path* *service-worker-path*))
            `(200
-               (:content-type "text/javascript; charset=utf-8" :cache-control "no-store")
+               (:content-type "text/javascript; charset=utf-8"
+                :cache-control "no-store"
+                :Cross-Origin-Opener-Policy "same-origin"
+                :Cross-Origin-Embedder-Policy "require-corp")
                (,(get-service-worker-js))))
           ((equal uri (concatenate 'string *root-path* *js-path*))
            `(200
