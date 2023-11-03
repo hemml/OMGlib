@@ -679,7 +679,7 @@ You can kill the webworker with method `kill`:
 
 ## OMG daemon mode
 
-**WARNING:** the following functionality is in early alpha version now, it will work only in POSIX compatible environments (Linux, MacOS X) and only with `SBCL`, but easely can be ported to another CL compilers.
+**WARNING:** the following functionality is in early alpha version now, it will work only in POSIX compatible environments (Linux, MacOS X) and only with `SBCL`, but easily can be ported to another CL compilers.
 
 OMGlib allows developers to work with code via REPL, but all of the changes are applied immediately, so, you need two copies of your code -- local development version and production one, which is updated less frequently. Each production code update causes a server restart, so all connected clients will lose they connections and will have to reconnect. After the reconnection, browser still has functions from previous version, which may lead to problems.
 
