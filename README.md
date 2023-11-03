@@ -300,6 +300,62 @@ and add it to the page:
 
 `(append-element (render-widget (make-instance 'my-widget)))`
 
+### editable-field
+
+The editable-field widget shows a value (generally a string) with dashed underline. It is clickable, and shows a text input line to change the value.
+Typical use:
+
+```
+(append-element
+  (render-widget
+    (make-instance 'editable-field
+      :input-size 5 ;; Size of the input field (when editing)
+      :value (format nil "~A" *current-value*) ;; Initial value
+      :ok (lambda (v)   ;; The callback is called, when user updates the value, will get a entered value as a
+            (let ((v1 (js-parse-float v))) ;; parameter and must return a value, which will replace an old one, or
+              (if (> v1 0)                 ;; nil to keep old value
+                  v1)))
+      :cancel (lambda (w) ;; w is an editable-field instance itself
+                (jslog "User canceled input!")))))
+```
+
+### modal-dialog-window
+
+You can subclass this widget to show modal dialogs - elements, which are on top of all elements on the screen and all content below are shaded and unclickable, while wis widget is on the screen. There are some differences from an ordinary widget. First, you have to override `render` method of its subclass with `:after` keyword and modify `root` property to show your content. Second, you have to use `close` method to remove this widget:
+
+```
+(defclass-f my-dialog (modal-dialog-window) ())
+
+(defmethod-f render-widget :after ((w my-dialog))
+  (append-element
+    (create-element "div" :|style.border| "0.1em solid black" ;; rendering a window content
+                          :|style.border-radius| "0.5em"
+                          :|style.padding| "2em"
+                          :|style.background| "#fffff0"
+      :append-element (create-element "button" :|innerHTML| "OK"  
+                                               :|onclick| (lambda (ev)
+                                                            (close w)))) ;; remove the widget
+    (root w)))
+```
+
+### progress-bar
+
+Renders a simple progress bar, you can use `set-progress` method to change it's value:
+
+```
+(let ((bar (make-instance 'progress-bar
+              :bg-style '(:|style.border| "1px solid black" ;; specify the outer frame style
+                          :|style.background| "white"
+                          :|style.padding| "1em")
+              :width "20em" ;; specify width
+              :height "2em" ;; and height
+              :fg-style '(:|style.background| "green") ;; specify a bar style
+              :value 0.1))) ;; initial value
+  (append-element (render-widget bar)) ;; show it
+  (execute-after 3 ;; change the value after 3 sec.
+    (set-progress bar 0.5))) ;; value must be from 0 to 1
+```
+
 ## Restrictions
 
 - **All browser-side functions must be declared in your own package(s), not in CL-USER.** See [How it works](#how-it-works) for details.
