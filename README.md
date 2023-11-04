@@ -444,7 +444,8 @@ You can declare specific classes and create instances on backend, using `defclas
    (yyy :initarg :yyy
         :browser-side t)
    (zzz :initarg :zzz
-        :mirrored t)))
+        :mirrored t))
+   :scope :session)
 
 (defmethod-r xxx ((obj avatar))
   (slot-value obj 'xxx))
@@ -459,6 +460,8 @@ Here is a local variable `a`, contains an instance of `avatar` class. This insta
 You also can define browser-side methods with `defmethod-f` and they are completely independed from local methods. So, you can define `(defmethod initialize-instance :after ((obj avatar) ...` and `(defmethod-f initialize-instance :after ((obj avatar) ...` simultaneously, one will work on backend, while another will work on frontends.
 
 The mirrored class can inherit other classes, both normal an browser-side ones (like `omg-widget`). The backend class will inherit only local classes from the given list, while browser-side will inherit only classes, declared with `defclass-f` and `defclass-m`.
+
+Each class can have a `:scope` option defined to increase instance security. If the scope is `:session`, the instance can be used only within a (browser) session, where it was created. If you will try to send the object into browser with different session, a error will be raised. The default scope is `:auto`, which is same as `:session` if the instance was created within a session, and will work with any session, if no current session on instance creation time. Also, you can provide an arbitrary function as a parameter of `:scope`, each instance will work in sessions, where the function returns the same value. For example, you can provide a function, returning current user ID, and your instances will be shared with session, where the same user is logged in.
 
 **WARNING:** the single backend instance can have multiple (one per session) browser-side siblings, they will be created any time, when you use this instance as a parameter for browser-side function. When you create an instance on backend, you can provide initargs also for browser-side slots, like `:yyy 20` in the example. This parameters will be supplied each time when the new browser-side instance is created. Also, you can hook `initialize-instance` method with `defmethod-f`, to perform data synchronization between browser-side and backend instances, if needed. The library itself don't provide any synchronization service, it will only guarantee the connection between backend and frontend instances.
 
