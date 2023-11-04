@@ -373,7 +373,7 @@ Use it with the following way:
 (let ((lst (make-instance 'list-view ;; Creating a list-view with 1000 elements
               :current-position 100  ;; And default view position is 100
               :elements (loop for i below 1000 collect (make-instance 'lst-element :pos i)))))
-  (append-element lst)
+  (append-element (render-widget lst)
 )
 ```
 
