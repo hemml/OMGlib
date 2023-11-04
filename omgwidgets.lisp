@@ -1,10 +1,14 @@
 (defpackage :omgwidgets
-  (:use cl omg jscl omgui)
+  (:use cl omg jscl omgui omgutil)
   (:export omg-widget
            editable-field
            root
            render-widget
            redraw
+           list-view
+           list-view-element
+           list-view-element-class
+           elements
            modal-dialog-window
            progress-bar
            set-progress))
@@ -65,6 +69,35 @@
           :initarg :value
           :initform 0)
    (bar :accessor bar)))
+
+(defclass-m list-view (omg-widget data-sync)
+  ((elements :accessor elements
+     :initform nil)
+   (current-position :accessor current-position
+                     :initform 150
+                     :mirrored t)
+   (transfer-chunk :initform 50
+                   :accessor transfer-chunk
+                   :browser-side t)
+   (mean-height :browser-side t
+                :initform nil
+                :accessor mean-height)
+   (f-elements :accessor f-elements
+               :initform nil
+               :browser-side t)
+   (list-view-element-class :browser-side t
+                  :initform 'list-view-element
+                  :accessor list-view-element-class)
+   (root :initform (create-element "div")
+         :accessor root)))
+
+(defclass-f list-view-element (omg-widget)
+  ((loaded :initform nil
+           :accessor loaded
+           :initarg :loaded)
+   (pos :initform (error "Position must be defined!")
+        :accessor pos
+        :initarg :pos)))
 
 ;;;;;;;;;;;;;;;;; render-widget ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -153,6 +186,34 @@
                                :|style.top| 0
                                :|style.width| ,(format nil "~A%" (jsfloor (* 100 (value b))))))))))
   (root b))
+
+(defmethod-f render-widget ((e list-view-element))
+  (setf (slot-value e 'root)
+        (if (loaded e)
+            (render-widget (loaded e))
+            (create-element "div" :|style.position| "relative"
+                                                  :|style.left| 0
+                                                  :|style.right| 0
+                                                  :|style.height| "1em"
+                                                  :|style.marginTop| "0.2em"
+                                                  :|style.background| "#f0f0f0"))))
+
+(defmethod-f render-widget ((l list-view))
+  (let ((el (create-element "div" :append-elements (mapcar #'render-widget (slot-value l 'f-elements)))))
+    (ensure-element el
+      (onscroll l (f-elements l) (current-position l))
+      (let ((scroll-tim nil))
+        (setf (jscl::oget (parent-element el) "onscroll")
+              (lambda (ev)
+                (if scroll-tim (funcall (jscl::%js-vref "clearTimeout") scroll-tim))
+                (setf scroll-tim (execute-after 0.1 (lambda () (onscroll l)))))))
+      (let ((cur-el (nth (current-position l) (f-elements l))))
+        (if cur-el
+            (setf (jscl::oget (parent-element el) "scrollTop")
+                  (- (jscl::oget (slot-value cur-el 'root) "offsetTop")
+                     (jscl::oget ((jscl::oget (parent-element el) "getBoundingClientRect")) "top"))))))
+    (setf (slot-value l 'root) el)))
+
 ;;;;;;;;;;;;;;;; redraw ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defgeneric-f redraw (omg-widget))
@@ -216,3 +277,74 @@
   (setf (slot-value b 'value) (min 1 (max 0 val)))
   (setf (jscl::oget (bar b) "style" "width") (format nil "~A%" (* 100 (value b)))))0
 
+;;;;;;;;;;;;;; list-view ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmethod-f initialize-instance :after ((l list-view) &key &rest args)
+  (sync-data l))
+
+(defmethod-r elements-length ((l list-view))
+  (length (elements l)))
+
+(defmethod-r get-elements ((l list-view) from to)
+  (subseq (elements l) from to))
+
+(defmethod-r get-element ((l list-view) num)
+  (nth num (elements l)))
+
+(defmethod-f sync-data :after ((l list-view))
+  (setf (slot-value l 'f-elements)
+        (let* ((cs (transfer-chunk l))
+               (ps (current-position l))
+               (start (max 0 (- ps cs)))
+               (el (elements-length l))
+               (end (min (- el 1) (+ ps cs cs)))
+               (iitms (get-elements l start (+ end 1)))
+               (ec (list-view-element-class l)))
+          (append (loop for i from 0 below start collect
+                        (make-instance ec :pos i))
+                  (loop for i from start below (+ end 1) collect
+                        (make-instance ec :pos i :loaded (nth (- i start) iitms)))
+                  (loop for i from (+ end 1) below el collect
+                        (make-instance ec :pos i)))))
+  (redraw l))
+
+(defmethod-f onscroll ((l list-view) &optional (cdl (f-elements l)) first-passed)
+  (if cdl
+      (let* ((eh (jscl::oget (root (car cdl)) "clientHeight"))
+             (tc (transfer-chunk l))
+             (scroll-top (jscl::oget (parent-element (root l)) "scrollTop"))
+             (ofs (- scroll-top (* 3 tc eh)))
+             (bot (+ ofs (jscl::oget (parent-element (root l)) "clientHeight") (* 3 tc eh)))
+             (bnd (jscl::oget ((jscl::oget (parent-element (root l)) "getBoundingClientRect")) "top"))
+             (stk nil)
+             (rem nil)
+             (first-el nil))
+        (loop for el on cdl do
+          (let* ((e (car el))
+                 (r (root e))
+                 (rtop (- (jscl::oget r "offsetTop") bnd)))
+            (setf rem el)
+            (if (and (> rtop (- scroll-top bnd)) (not first-el))
+                (setf first-el (pos e)))
+            (if (> rtop bot)
+                (loop-finish)
+                (if (and (>= rtop ofs)
+                         (not (loaded e)))
+                    (progn
+                      (push e stk)
+                      (if (>= (length stk) (transfer-chunk l))
+                          (loop-finish)))))))
+        (if (and (not first-passed) first-el)
+            (setf (slot-value l 'current-position) first-el))
+        (if stk
+            (map nil
+                 (lambda (e i)
+                   (setf (slot-value e 'loaded) i)
+                   (redraw e))
+                 (reverse stk)
+                 (get-elements l (pos (car (last stk))) (+ 1 (pos (car stk))))))
+        (if (and stk rem) (execute-after 0.01 (lambda () (onscroll l rem first-el)))))))
+
+(defmethod-f sync-slot :after ((l list-view) slot)
+  (if (equal slot 'elements)
+      (redraw l)))

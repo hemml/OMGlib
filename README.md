@@ -356,6 +356,29 @@ Renders a simple progress bar, you can use `set-progress` method to change it's 
     (set-progress bar 0.5))) ;; value must be from 0 to 1
 ```
 
+### list-view
+
+The `list-view` widget is a mirrored class (see below), displaying a list of elements, synchronized with a list on backend. The list offers lazy loading of elements, so you can display a really huge lists and browser will not hang. Each element of the list must be an `omg-widget`.
+Use it with the following way:
+
+```
+(defclass-f lst-element (omg-widget)
+  ((pos :initarg :pos
+        :accessor pos)))
+
+(defmethod-f render-widget ((el lst-element))
+  (setf (slot-value el 'root)
+        (create-element "div" :|innerHTML| (format nil "Element ~A" (pos el)))))
+
+(let ((lst (make-instance 'list-view ;; Creating a list-view with 1000 elements
+              :current-position 100  ;; And default view position is 100
+              :elements (loop for i below 1000 collect (make-instance 'lst-element :pos i)))))
+  (append-element lst)
+)
+```
+
+The `elements` slot of the `list-view` instance holding a list of elements. When you changing it on the backend, call `(sync-data lst)` method on the host to update it in browser(s).
+
 ## Restrictions
 
 - **All browser-side functions must be declared in your own package(s), not in CL-USER.** See [How it works](#how-it-works) for details.
