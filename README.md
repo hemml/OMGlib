@@ -379,6 +379,58 @@ Use it with the following way:
 
 The `elements` slot of the `list-view` instance holding a list of elements. When you changing it on the backend, call `(sync-data lst)` method on the host to update it in browser(s).
 
+### Scientific plots
+
+You can display 1D and 2D scientific plots. First, draw a coordinate system with `graph` widget:
+
+```
+(append-element
+  (create-element "div" :|style.width| "20em"  ;; you have to define an outer element, the graph will fill its bounds
+                        :|style.height| "20em"
+    :append-element (render-widget (make-instance 'graph :xmin -1 :xmax 1 :ymin 0 :ymax 1))))
+```
+
+The `graph` class has the following slots (with corresponding initargs):
+
+- `xmin`, `xmax`, `ymin`, `ymax` - graph bounds (user coordinates)
+- `xticks`, `yticks` - number of ticks on both axes
+- `adjust` - if `T` (default) ticks will be started not from `xmin` and `ymin`, but from nearest round values
+- `xdelta`, `ydelta` - if set (by default is not) will be the distance between ticks on corresponding axes
+- `xcaption`, `ycaption` - axes labels
+- `show-scales` - a list, which may contain keywords `:left`, `:right`, `:top` and `:bottom`, controls which axes scales will be shown
+- `preserve-aspect-ratio` - if `T` (by default is `nil`) the graph aspect ratio will be calculated as `(/ (- xmax xmin) (- ymax ymin))`, otherwise the aspect ratio will depend from outer element sizes
+
+To display data you can add `func-plot`, `tabular-plot` and `matrix-plot` instances to the `graph` via `add-plot` method:
+
+```
+(append-element
+  (create-element "div" :|style.width| "20em"  ;; you have to define an outer element, the graph will fill its bounds
+                        :|style.height| "20em"
+    :append-element
+      (render-widget
+        (let ((g (make-instance 'graph :xmin (- pi) :xmax pi :ymin -1 :ymax 1 :preserve-aspect-ratio t :yticks 3)))
+          (add-plot g (make-instance 'func-plot :func (lambda (x) (jssin x))))
+          g))))
+```
+
+All of that classes has a `color` slot (by default is "red"), you can set any color in the form, supported by css.
+The when creating a `func-plot` you must provide a `:func` parameter which is a function of single argument, returning a number.
+To the `tabular-plot` you must provide a `:table` argument, which is a list of points, each is a `(x . y)` cons.
+The `matrix-plot` is to display a 2D map and has the following slots:
+
+- `matrix` - a matrix to display, a 2D `array` filled by numbers
+- `palette` - a function of a single argument (from 0 to 1), returning a list of 3 values (also from 0 to 1), corresponding to reg, green and blue components. By default it is `(lambda (x) (list x x x))` to display b/w graphs.
+- `norm` - if `T` (by default is `nil`) the matrix will be shifted and scaled before display to fit a whole (0..1) values range. Very useful if your matrix may contain negative values, or values higher then 1, for example.
+
+You can use `(remove-plot graph plot)` and `(remove-all-plots graph)` to remove plots from the graph.
+To rescale (and redraw) the graph you can use `rescale` method:
+
+```
+(rescale graph :xmin new-xmin :xmax new-xmax :ymin new-ymin :ymax new-ymax :xdelta new-xdelta :ydelta new-ydelta)
+```
+
+Also, you can use `(rescale-auto graph)` method to rescale the graph to fit containing tabilar- and matrix-plots.
+
 ## Restrictions
 
 - **All browser-side functions must be declared in your own package(s), not in CL-USER.** See [How it works](#how-it-works) for details.
