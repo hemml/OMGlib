@@ -1066,7 +1066,9 @@ if(!OMG.inServiceWorker) {
                 (wait-on-semaphore sem)
                 (let ((res (cdr (assoc :result (gethash-lock key *gimme-wait-list*)))))
                    (remhash key *gimme-wait-list*)
-                   (unintern key)
+                   (multiple-value-bind (x fnd) (gethash key *takit-wait-list*)
+                     (declare (ignore x))
+                     (if (not fnd) (unintern key)))
                   `(200 (:content-type "text/plain; charset=utf-8") (,res))))))
         `(404 (:content-type "text/plain; charset=utf-8") ("")))))
 
