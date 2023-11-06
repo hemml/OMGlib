@@ -793,21 +793,12 @@
 (defun-f guess-delta (dx nt)
   (let* ((delta (/ dx nt))
          (dgl (jsfloor (/ (jsln delta) (jsln 10))))
-         (dgu (jsceil (/ (jsln delta) (jsln 10))))
-         (dg (if (<= (abs (- delta (expt 10 dgl)))
-                     (abs (- delta (expt 10 dgu))))
-                 dgl
-                 dgu))
-         (d (expt 10 dg))
-         (d1 (if (<= (abs (- delta d))
-                     (abs (- delta (* 2 d))))
-                 d
-                 (* 2 d)))
-         (d2 (if (<= (abs (- delta d1))
-                     (abs (- delta (* 1.5 d))))
-                 d1
-                 (* 1.5 d))))
-    d2))
+         (d1 (expt 10 dgl)))
+    (cond ((< (/ dx d1) (1+ nt)) d1)
+          ((< (/ dx (* 2 d1)) (1+ nt)) (* 2 d1))
+          ((< (/ dx (* 2.5 d1)) (1+ nt)) (* 2.5 d1))
+          ((< (/ dx (* 5 d1)) (1+ nt)) (* 5 d1))
+          (t (* 10 d1)))))
 
 (defmethod-f xdelta ((g graph))
   (if (slot-boundp g 'xdelta)
