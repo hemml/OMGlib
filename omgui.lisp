@@ -1699,9 +1699,7 @@
                      (2 (if (not *main-thread-result-cache*) ;; 2 -- execute a lambda
                             (setf *main-thread-result-cache* (make-hash-table)))
                         (let* ((,sym (load-from-buffer ,req-buf :start 8))
-                               (dbg (format t "SYM: ~A" ,sym))
-                               (,lam (cdr (assoc (car ,sym) *main-lambdas*)))
-                               (dbg (format t "LAM: ~A" ,lam)))
+                               (,lam (cdr (assoc (car ,sym) *main-lambdas*))))
                           (if ,lam
                               (let ((,val (multiple-value-list (apply ,lam (cdr ,sym)))))
                                 (setf (gethash (car ,sym) *main-thread-result-cache*) ,val)
