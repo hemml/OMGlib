@@ -1342,11 +1342,12 @@
         (lambda (ev)
           (cond ((equal (jscl::oget ev "data") "BOOT")
                  ((jscl::oget (worker ww) "postMessage")
-                  (format nil "~Aself.OMG.Base='~A' ; self.postMessage('BOOT DONE')"
+                  (format nil "~Aself.OMG.Base='~A' ; OMG.session_id='~A' ; self.postMessage('BOOT DONE')"
                           (if (persistent-cache ww)
                               "self.OMG.PersistentCache=true ; "
                               "")
-                          (jscl::oget (winref "self") "OMG" "Base"))))
+                          (jscl::oget (winref "self") "OMG" "Base")
+                          (jscl::oget (winref "self") "OMG" "session_id"))))
                 ((equal (jscl::oget ev "data") "BOOT DONE")
                  (setf (slot-value ww 'ready) t)
                  (setf (jscl::oget (worker ww) "onmessage") (lambda (ev))))
