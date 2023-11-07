@@ -502,13 +502,14 @@ if(!OMG.inServiceWorker) {
 
   OMG.FetchFvalue=(sym)=>{
     let isFetched=false
-    return (...args)=>{
-      if(isFetched) return sym.fvalue.apply(null,args)
+    const ffv=(...args)=>{
+      if(isFetched||sym.fvalue!=ffv) return sym.fvalue.apply(null,args)
       OMG.Fetch(sym)
       isFetched=true
       sym.fvalue=sym.package.symbols[sym.name].fvalue
       return sym.fvalue.apply(null,args)
     }
+    return ffv
   }
 
   OMG.InMakePackage=false
