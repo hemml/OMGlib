@@ -173,6 +173,18 @@
 (defclass-f matrix-plot (plot)
   ((nx)
    (ny)
+   (xmin :accessor xmin
+         :initarg :xmin
+         :initform (error "matrix-plot bounds must bi defined!"))
+   (xmax :accessor xmax
+         :initarg :xmax
+         :initform (error "matrix-plot bounds must bi defined!"))
+   (ymin :accessor ymin
+         :initarg :ymin
+         :initform (error "matrix-plot bounds must bi defined!"))
+   (ymax :accessor ymax
+         :initarg :ymax
+         :initform (error "matrix-plot bounds must bi defined!"))
    (palette :initarg :palette
             :initform (lambda (x) (list x x x))
             :accessor palette)
