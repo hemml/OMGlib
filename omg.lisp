@@ -387,7 +387,25 @@ OMG.PersistentCache=false
 OMG.inWorker=(typeof window==='undefined')
 OMG.inServiceWorker=(OMG.inWorker&&(typeof XMLHttpRequest==='undefined'))
 
+OMG.FetchCache={}
+
 OMG.objectRegistry={}
+
+OMG.ww_js_url=false
+
+OMG.get_ww_js_url=()=>{
+  if(!OMG.ww_js_url) {
+    let xhr=new XMLHttpRequest()
+    xhr.open('GET', OMG.Base+'" *root-path* *web-worker-path* "', false)
+    xhr.send()
+    if (xhr.status === 200) {
+      OMG.ww_js_url=URL.createObjectURL(new Blob([xhr.response], {'type' : 'application/javascript'}))
+    } else {
+      throw new Error('Cannot fetch webworker js!')
+    }
+  }
+  return OMG.ww_js_url
+}
 
 OMG.get_session_id=()=>{
   if(OMG.session_id) return 'OMG::'+OMG.session_id
@@ -477,7 +495,7 @@ if(!OMG.inServiceWorker) {
 
   OMG.OriginalIntern=jscl.internals.intern
 
-  OMG.Fetch=(sym)=>{
+  OMG.Fetch=(sym, eval_fn=eval)=>{
     const full_name=sym.package.packageName+'::'+sym.name
     //console.log('FVALUE FETCH:',full_name)
     if(!OMG.InFetch[full_name]) {
@@ -489,7 +507,8 @@ if(!OMG.inServiceWorker) {
                ' '+full_name)
       if (xhr.status === 200) {
         //console.log(xhr.response)
-        eval(xhr.response)
+        OMG.FetchCache[full_name]=xhr.response
+        eval_fn(xhr.response)
         OMG.InFetch[full_name]=false
       } else {
         OMG.InFetch[full_name]=false
@@ -500,11 +519,31 @@ if(!OMG.inServiceWorker) {
     }
   }
 
+  OMG.FetchWithCache=(sym, eval_fn=eval)=>{
+    //return OMG.Fetch(sym, eval_fn)
+    const full_name=sym.package.packageName+'::'+sym.name
+    if(full_name in OMG.FetchCache) {
+      //console.log('CACHED1:',full_name)
+      eval_fn(OMG.FetchCache[full_name])
+    } else {
+      if(OMG.FValueFetchHandler) {
+        const res=OMG.FValueFetchHandler(sym)
+        if(res) {
+          //console.log('CACHED2:',full_name)
+          eval_fn(res)
+        } else OMG.Fetch(sym)
+      } else {
+        OMG.Fetch(sym, eval_fn)
+      }
+    }
+  }
+
   OMG.FetchFvalue=(sym)=>{
     let isFetched=false
+    const full_name=sym.package.packageName+'::'+sym.name
     const ffv=(...args)=>{
-      if(isFetched||sym.fvalue!=ffv) return sym.fvalue.apply(null,args)
-      OMG.Fetch(sym)
+      if(isFetched||sym.package.symbols[sym.name].fvalue!=ffv) return sym.fvalue.apply(null,args)
+      OMG.FetchWithCache(sym) //,(x)=>{if(sym.package.symbols[sym.name].fvalue==ffv){return eval(x)}})
       isFetched=true
       sym.fvalue=sym.package.symbols[sym.name].fvalue
       return sym.fvalue.apply(null,args)
@@ -580,7 +619,7 @@ if(!OMG.inServiceWorker) {
   jscl.packages.JSCL.symbols['LOOKUP-IN-LEXENV'].fvalue=(mv,name,lexenv,ns)=>{
     let res=OMG.OriginalLIL(mv,name,lexenv,ns)
     if(!OMG.disableLIL && ns.name==='FUNCTION' && 'package' in name && name.package.omgPkg && 'name' in res && res.name==='NIL') {
-      OMG.Fetch(name)
+      OMG.FetchWithCache(name)
       res=OMG.OriginalLIL(mv,name,lexenv,ns)
     }
     return res
@@ -590,19 +629,7 @@ if(!OMG.inServiceWorker) {
   jscl.packages.JSCL.symbols['!GET-SETF-EXPANSION'].fvalue=(mv,fn)=>{
     const set_name = '(SETF_'+fn.car.name+')'
     if('car' in fn && 'name' in fn.car && 'package' in fn.car && fn.car.package.omgPkg && !(set_name in fn.car.package.symbols)) {
-      //console.log('NEED FETCH:',set_name, fn.car.package.packageName)
-      const full_name=fn.car.package.packageName+'::'+set_name
-      OMG.InFetch[full_name]=true
-      let xhr=new XMLHttpRequest()
-      xhr.open('POST', OMG.Base+'" *root-path* *gimme-path* "', false)
-      xhr.send(OMG.get_session_id()+' '+
-               jscl.packages.CL.symbols['*PACKAGE*'].value.packageName+
-               ' '+full_name)
-      if (xhr.status === 200) {
-        eval(xhr.response)
-      } else {
-        throw new Error('Cannot fetch set symbol '+fn.car.package.packageName+'::'+set_name)
-      }
+      OMG.FetchWithCache({'package':fn.car.package, 'name':set_name})
     }
     return OMG.OriginalGSE(mv,fn)
   }
@@ -611,7 +638,7 @@ if(!OMG.inServiceWorker) {
   jscl.packages.JSCL.symbols['COMPUTE-APPLICABLE-METHODS-USING-CLASSES'].fvalue=(mv,gf,clss)=>{
     let res=OMG.OriginalCAMUC(mv,gf,clss)
     if ('name' in res && res.name=='NIL') {
-      OMG.Fetch(gf.cdr.cdr.car[0])
+      OMG.FetchWithCache(gf.cdr.cdr.car[0])
       res=OMG.OriginalCAMUC(mv,gf,clss)
     }
     return res
@@ -632,7 +659,7 @@ if(!OMG.inServiceWorker) {
     if('package' in cls && cls.package.omgPkg &&
        !cls.package.symbols[cls.name].omgClass) {
       cls.package.symbols[cls.name].omgClass=true
-      OMG.Fetch(cls)
+      OMG.FetchWithCache(cls)
     }
     return OMG.OriginalFC1(mv,cls,arg2)
   }
@@ -912,9 +939,14 @@ if(!OMG.inServiceWorker) {
               (sym-pkg (package-name (symbol-package sym)))
               (cmd (format nil "if(\"~A\" in jscl.packages && \"~A\" in jscl.packages[\"~A\"].symbols) {
             delete(OMG.InFetch[\"~A:~A\"])
+            delete(OMG.FetchCache[\"~A::~A\"])
             jscl.packages[\"~A\"].symbols[\"~A\"].fvalue=OMG.FetchFvalue(OMG.OriginalIntern(\"~A\", \"~A\"))
             jscl.packages[\"~A\"].symbols[\"~A\"].value=undefined}"
-                                sym-pkg sym-name sym-pkg sym-pkg sym-name sym-pkg sym-name sym-name sym-pkg sym-pkg sym-name)))
+                                sym-pkg sym-name sym-pkg
+                                sym-pkg sym-name
+                                sym-pkg sym-name
+                                sym-pkg sym-name sym-name sym-pkg
+                                sym-pkg sym-name)))
          (send-text (socket s) cmd))))
 
 (defun remote-rdefclass (cls)
@@ -1326,7 +1358,10 @@ self.addEventListener('fetch', function(e) {
     (get-main-js)
     "
 self.addEventListener('message', (currentEvent)=>{
-  jscl.internals.globalEval(currentEvent.data)
+  if('cache' in currentEvent.data) {
+    OMG.FetchCache=currentEvent.data.cache
+  }
+  jscl.internals.globalEval(currentEvent.data.code)
 })
 self.postMessage('BOOT')
 "))

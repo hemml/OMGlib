@@ -1334,20 +1334,22 @@
 (defmethod-f msg ((ww webworker) data &key transfer (try-count 20))
   (when-worker-ready ww
     (if transfer
-        ((jscl::oget (worker ww) "postMessage") data transfer)
-        ((jscl::oget (worker ww) "postMessage") data))))
+        ((jscl::oget (worker ww) "postMessage") (make-js-object :|code| data) transfer)
+        ((jscl::oget (worker ww) "postMessage") (make-js-object :|code| data)))))
 
 (defmethod-f initialize-instance :after ((ww webworker) &rest args)
   (setf (jscl::oget (worker ww) "onmessage")
         (lambda (ev)
           (cond ((equal (jscl::oget ev "data") "BOOT")
                  ((jscl::oget (worker ww) "postMessage")
-                  (format nil "~Aself.OMG.Base='~A' ; OMG.session_id='~A' ; self.postMessage('BOOT DONE')"
-                          (if (persistent-cache ww)
-                              "self.OMG.PersistentCache=true ; "
-                              "")
-                          (jscl::oget (winref "self") "OMG" "Base")
-                          (jscl::oget (winref "self") "OMG" "session_id"))))
+                  (make-js-object
+                    :|code| (format nil "~Aself.OMG.Base='~A' ; OMG.session_id='~A' ; self.postMessage('BOOT DONE'); console.log('PC:',self.OMG.PersistentCache)"
+                                    (if (persistent-cache ww)
+                                        "self.OMG.PersistentCache=true ; "
+                                        "")
+                                    (jscl::oget (winref "self") "OMG" "Base")
+                                    (jscl::oget (winref "self") "OMG" "session_id"))
+                    :|cache| (jscl::oget (winref "OMG") "FetchCache"))))
                 ((equal (jscl::oget ev "data") "BOOT DONE")
                  (setf (slot-value ww 'ready) t)
                  (setf (jscl::oget (worker ww) "onmessage") (lambda (ev))))
@@ -1367,7 +1369,9 @@
 
 (defmethod-f initialize-instance :before ((ww classic-worker) &rest args)
   (push ww *worker-cache*)
-  (setf (slot-value ww 'worker) (jscl::make-new (jscl::%js-vref "Worker") (jscl::lisp-to-js (get-ww-path)))))
+  (setf (slot-value ww 'worker)
+        (jscl::make-new (jscl::%js-vref "Worker") (jscl::lisp-to-js ((jscl::oget (winref "OMG") "get_ww_js_url"))))))
+;;        (jscl::make-new (jscl::%js-vref "Worker") (jscl::lisp-to-js (get-ww-path)))))
 
 (defmethod-f kill ((ww webworker) &optional (try-count 20))
   ((jscl::oget (worker ww) "terminate"))
@@ -1595,6 +1599,7 @@
 (def-local-macro-f run-in-web-worker (ww1 &rest code)
   (let* ((sym (gensym))
          (req-buf (gensym))
+         (req-buf2 (gensym))
          (ibuf (gensym))
          (ev (gensym))
          (res-len (gensym))
@@ -1609,6 +1614,9 @@
          (lam (gensym))
          (val (gensym))
          (fnd (gensym))
+         (fhandler (gensym))
+         (req-code (gensym))
+         (alt-buf (gensym))
          (local-symbols (remove-if #'null
                           (mapcar #'jscl::binding-name
                                   (remove-if-not #'null
@@ -1621,38 +1629,47 @@
                                     (cadr jscl::*environment*)
                                     :key #'jscl::binding-declarations))
                    (omg::compile-to-js
-                      `(let* ((,cur-buf-len (* 1024 1024 128))
-                              (,req-buf (jscl::make-new (winref "SharedArrayBuffer") ,cur-buf-len))
-                              (,cache-lst ',(if (and (listp (car code))
+                      `(let* ((,cache-lst ',(if (and (listp (car code))
                                                      (equal 'cache-vars (caar code)))
                                                 (cdar code)))
                               (,cache-all (position t ,cache-lst))
-                              (,cache-h (make-hash-table)))
-                          (setf (jscl::oget (winref "OMG") "symbolValueFetchHandler")
-                                (lambda (,sym)
-                                  (labels ((try-fetch ()
-                                             (let ((,ibuf (jscl::make-new (winref "Int32Array") ,req-buf 0 2)))
-                                               (store-to-buffer ,sym ,req-buf :start 8)
-                                               (setf (jscl::oget ,ibuf 0) 0)
-                                               (setf (jscl::oget ,ibuf 1) 0)
-                                               (funcall (winref "postMessage") ,req-buf)
-                                               ((jscl::oget (jscl::%js-vref "Atomics") "wait") ,ibuf 0 0)
-                                               (let ((,res-len (jscl::oget ,ibuf 0)))
-                                                 (if (> ,res-len (jscl::oget ,req-buf "byteLength"))
-                                                     (progn
-                                                       (setf ,cur-buf-len ,res-len)
-                                                       (setf ,req-buf (jscl::make-new (winref "SharedArrayBuffer") ,cur-buf-len))
-                                                       (try-fetch))
-                                                     (load-from-buffer ,req-buf :start 4))))))
-                                    (multiple-value-bind (,val ,fnd) (gethash ,sym ,cache-h)
-                                      (if ,fnd
-                                          ,val
-                                          (let ((,val (try-fetch)))
-                                            (if (and (jscl::oget (winref "OMG") "PersistentCache") (not (position ,sym ',local-symbols)))
-                                                (setf (jscl::oget ,sym "value") ,val))
-                                            (if (or ,cache-all (position ,sym ,cache-lst))
-                                                (setf (gethash ,sym ,cache-h) ,val))
-                                            ,val))))))
+                              (,cache-h (make-hash-table))
+                              (,cur-buf-len (* 1024 1024 128))
+                              (,req-buf (jscl::make-new (winref "SharedArrayBuffer") ,cur-buf-len))
+                              (,req-buf2 (jscl::make-new (winref "SharedArrayBuffer") ,cur-buf-len)))
+                          (labels ((,fhandler (,sym &optional (,req-code 0) ,alt-buf)
+                                     (labels ((try-fetch ()
+                                                (let ((,ibuf (jscl::make-new (winref "Int32Array") (if ,alt-buf ,req-buf2 ,req-buf) 0 2)))
+                                                  (store-to-buffer ,sym (if ,alt-buf ,req-buf2 ,req-buf) :start 8)
+                                                  (setf (jscl::oget ,ibuf 0) 0)
+                                                  (setf (jscl::oget ,ibuf 1) ,req-code)
+                                                  (funcall (winref "postMessage") (if ,alt-buf ,req-buf2 ,req-buf))
+                                                  ((jscl::oget (jscl::%js-vref "Atomics") "wait") ,ibuf 0 0)
+                                                  (let ((,res-len (jscl::oget ,ibuf 0)))
+                                                    (if (> ,res-len (jscl::oget (if ,alt-buf ,req-buf2 ,req-buf) "byteLength"))
+                                                        (progn
+                                                          (setf ,cur-buf-len ,res-len)
+                                                          (setf ,req-buf (jscl::make-new (winref "SharedArrayBuffer") ,cur-buf-len))
+                                                          (setf ,req-buf2 (jscl::make-new (winref "SharedArrayBuffer") ,cur-buf-len))
+                                                          (try-fetch))
+                                                        (load-from-buffer (if ,alt-buf ,req-buf2 ,req-buf) :start 4))))))
+                                       (multiple-value-bind (,val ,fnd) (gethash ,sym ,cache-h)
+                                         (if ,fnd
+                                             ,val
+                                             (let ((,val (try-fetch)))
+                                               (if (and (jscl::oget (winref "OMG") "PersistentCache") (not (position ,sym ',local-symbols)))
+                                                   (setf (jscl::oget ,sym "value") ,val))
+                                               (if (or ,cache-all (jscl::oget (winref "OMG") "PersistentCache") (position ,sym ,cache-lst))
+                                                   (setf (gethash ,sym ,cache-h) ,val))
+                                               ,val))))))
+                            (setf (jscl::oget (winref "OMG") "FValueFetchHandler")
+                                  (lambda (,sym)
+                                    (if (not (or (eq ,sym 'store-to-buffer)
+                                                 (eq ,sym 'load-from-buffer)))
+                                        (let* ((,val (,fhandler ,sym 4 t)))
+                                          (if (stringp ,val)
+                                              ,val)))))
+                            (setf (jscl::oget (winref "OMG") "symbolValueFetchHandler") #',fhandler))
                           (let ((,rvals (multiple-value-list
                                           (progn
                                             ,@(if (and (listp (car code))
@@ -1713,6 +1730,16 @@
                      (3 (let ((,sym (load-from-buffer ,req-buf :start 8))) ;; 3 -- send the result again
                           ((jscl::oget (jscl::%js-vref "Atomics") "store") ,ibuf 0 (store-to-buffer (gethash ,sym *main-thread-result-cache*) ,req-buf :start 4))
                           (remhash ,sym *main-thread-result-cache*)
+                          ((jscl::oget (jscl::%js-vref "Atomics") "notify") ,ibuf 0)))
+                     (4 (let* ((,sym (load-from-buffer ,req-buf :start 8))) ;; 4 -- send a value from FetchCache
+                          ; (format t "REQ4: ~A" ,sym)
+                          ((jscl::oget (jscl::%js-vref "Atomics") "store") ,ibuf 0
+                             (store-to-buffer
+                               (jscl::oget (winref "OMG") "FetchCache"
+                                 (format nil "~A::~A"
+                                   (package-name (symbol-package ,sym))
+                                   (symbol-name ,sym)))
+                               ,req-buf :start 4))
                           ((jscl::oget (jscl::%js-vref "Atomics") "notify") ,ibuf 0)))))))
          (setf (slot-value ,ww 'busy) t)
          (msg ,ww ,jscode))
