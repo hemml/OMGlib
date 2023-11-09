@@ -1343,7 +1343,7 @@
           (cond ((equal (jscl::oget ev "data") "BOOT")
                  ((jscl::oget (worker ww) "postMessage")
                   (make-js-object
-                    :|code| (format nil "~Aself.OMG.Base='~A' ; OMG.session_id='~A' ; self.postMessage('BOOT DONE'); console.log('PC:',self.OMG.PersistentCache)"
+                    :|code| (format nil "~Aself.OMG.Base='~A' ; OMG.session_id='~A' ; self.postMessage('BOOT DONE');"
                                     (if (persistent-cache ww)
                                         "self.OMG.PersistentCache=true ; "
                                         "")
