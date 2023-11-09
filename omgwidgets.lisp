@@ -762,8 +762,8 @@
   (if (slot-boundp g 'graph)
       (ensure-element (graph g)
         (if (not (jscl::oget (root p) "isConnected"))
-            (append-element (render-widget p) (graph g))
-          (rescale-auto g)))))
+            (append-element (render-widget p) (graph g)))
+        (rescale-auto g))))
 
 (defmethod-f remove-plot ((p plot))
   (setf (slot-value (parent p) 'plots)
