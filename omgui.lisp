@@ -51,6 +51,7 @@
            jsatan
            jsatan2
            jsrandom
+           jssort
            kill
            load-js-script
            local-storage
@@ -229,6 +230,10 @@
 (defun-f js-get-element-by-id (id)
   "Get DOM object by ID (must not be called on host!)"
   ((jscl::oget (jscl::%js-vref "document") "getElementById") id))
+
+(defun-f jssort (arr &optional (fn (lambda (x y) (> x y))))
+  "Sort an array"
+  ((jscl::oget arr "sort") fn))
 
 (defun-f check-element (id)
   "Check if element with ``id'' exists in DOM"

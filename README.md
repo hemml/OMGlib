@@ -86,6 +86,8 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(jsfloor num)` `(jsfceil num)` `(jsftrunc num)` `(jsmax ...nums)` `(jsmin ...nums)` `(jsrandom)` `(jssin num)` `(jscos num)` `(jstan num)` `(jsasin num)` `(jsacos num)` `(jsatan num)` `(jsatan2 y x)` - JS Math functions `Math.floor()`, `Math.ceil()`, `Math.trunc()`, `Math.max()`, `Math.min()`, `Math.random()`, `Math.sin()`, `Math.cos()`, `Math.tan()`, `Math.asin()`, `Math.acos()`, `Math.atan()` and `Math.atan2()` .
 
+- `(jssorg array &optional (fn #'>))` - destructive sort an array by compare function fn, return a sorted array
+
 - `(jslog ...args)` - wrapper for `console.log()`
 
 - `(prevent-page-close)` `(allow-page-close)` - prevent and allow page closing.
