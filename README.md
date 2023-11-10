@@ -791,6 +791,7 @@ The `classic-worker` instance will have no internal state by default, all variab
 ```
 
 The caching can improve the performance drastically sometimes.
+**NB:** with `:persistent-cache t` ALL variables, even local ones, will be cached and saved within the worker state. If you call the same code next time, it will ignore any changes in local variables. If you want to avoid *permanent* cache of the variable, you can add it to the `(cache-vars)` list. It will be cached temporarely, only while the `run-in-web-worker` code is executing, but not on the next call of the same `run-in-web-worker` block.
 
 Also, two useful macros are presented:
 
