@@ -219,13 +219,13 @@
                                               :|style.position| "absolute"
                                               :|style.top| "0"
                                               :|style.left| "0"
-                                              :|zIndex| 100000)))
+                                              :|style.zIndex| 100000)))
   (setf (slot-value w 'root)
         (create-element "div" :|style.visibility| "hidden"
                               :|style.width| "auto"
                               :|style.display| "inline-block"
                               :|style.position| "absolute"
-                              :|zIndex| 200000))
+                              :|style.zIndex| 200000))
   (ensure-element (root w)
     (setf (jscl::oget (root w) "style" "left")
           (format nil "~Apx"
