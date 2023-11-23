@@ -34,6 +34,7 @@
            get-omg-cookie-name
            get-my-version
            in-service-worker
+           is-nan
            js-get-element-by-id
            jsceil
            jsfloor
@@ -97,8 +98,11 @@
 (defun-f winref (name)
   (jscl::oget (jscl::%js-vref "self") name))
 
+(defun-f is-nan (n)
+  (funcall (winref "isNaN") n))
+
 (defun-f js-parse-float (s)
-  (funcall (winref "parseFloat") (jscl::lisp-to-js s)))
+  (funcall (winref "Number") (jscl::lisp-to-js s)))
 
 (defun-f local-storage (key &optional def)
   (let ((vl ((jscl::oget (winref "localStorage") "getItem") (jscl::lisp-to-js key))))

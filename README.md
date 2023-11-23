@@ -141,6 +141,8 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
 
 - `(js-parse-float s)` - convert a string to float (browser-side)
 
+- `(is-nan n)` - check if `n` is NaN (browser-side)
+
 - `(local-storage key &optional def-val)` `(setf (local-storage key) val)` - interface to the `localStorage` API. Accepts any values, returns strings only.
 
 - `(session-storage key &optional def-val)` `(setf (session-storage key) val)` - interface to the `sessionStorage` API. Accepts any values, returns strings only.
