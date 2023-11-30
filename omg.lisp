@@ -284,7 +284,9 @@
                         (if (and classes (is-system-pkg (symbol-package ',name)))
                             (progn
                               (jscl::with-compilation-environment  ;; We need to compile specific methods locally to proper setup jscl clos environment
-                                (jscl::compile-toplevel ',f-form))
+                                (jscl::compile-toplevel
+                                  (jscl::ls-read-from-string
+                                    (omg-write-to-string ',f-form))))
                               (map nil #'replace-method classes)
                               (remote-update-methods ',name classes)))
                         (if (intersection (gethash-lock ',name *accessor-classes*)
@@ -321,7 +323,9 @@
     (setf (gethash name *classes-f-slots*) slots)
     (setf (gethash name *classes-f-superclasses*) sup)
     `(let ((,tmp (jscl::with-compilation-environment     ;; We need to compile defclass locally
-                   (jscl::compile-toplevel ',f-form))))  ;;    to proper setup jscl compilation environment
+                   (jscl::compile-toplevel
+                     (jscl::ls-read-from-string
+                       (omg-write-to-string ',f-form))))))  ;;    to proper setup jscl compilation environment
        (declare (ignore ,tmp))
        (setf (gethash-lock ',name *exportable-expressions*) ',f-form)
        (if (not (gethash-lock ',name *exported-classes-methods*))
