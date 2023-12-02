@@ -6,7 +6,7 @@
            progress-bar width height bg-style fg-style set-progress
            list-view elements current-position transfer-chunk list-view-element-class
            graph xmin xmax ymin ymax adjust xticks yticks xdelta ydelta xcaption ycaption show-scales plots need-rescale add-plot
-                 remove-plot remove-all-plots preserve-aspect-ratio rescale rescale-auto
+                 remove-plot remove-all-plots preserve-aspect-ratio rescale rescale-auto make-curve
            plot color parent
            func-plot func
            tabular-plot table
