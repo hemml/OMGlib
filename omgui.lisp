@@ -16,6 +16,7 @@
            dialog-ok
            disable-back-button
            disable-scroll
+           dont-transfer
            dragabble-list
            dragabble-list-elements
            dragabble-list-insert
@@ -1427,7 +1428,9 @@
     (jscl::with-compilation-environment (jscl::compile-toplevel code t t))
     (setf (jscl::oget (winref "OMG") "disableLIL") nil)))
 
-(defun-f store-to-buffer (obj buf &key (start 0))
+(defclass-f dont-transfer () ())
+
+(defun-f store-to-buffer (obj buf &key (start 0) respect-transfer)
   (let ((last-id 100)
         (obj-hash (make-hash-table))
         (len (jscl::oget buf "byteLength")))
@@ -1466,16 +1469,19 @@
                                  start1))
                      (null    (store-id 4 0 0)) ;; 4 - NIL is CONS, 0 for NIL
                      (symbol  (stb (symbol-name obj) (stb (package-name (symbol-package obj)) (store-id 3 0)))) ;; 3 - symbol
-                     (jscl::mop-object (check-id 6 ;; 6 - CLOS object, class and alist of slots follows
-                                         (let ((slts (remove-if #'null (mapcar
-                                                                         (lambda (slot)
-                                                                           (let ((name (getf slot :name)))
-                                                                             (if (slot-boundp obj name)
-                                                                                 (cons name (slot-value obj name)))))
-                                                                         (jscl::class-slots (class-of obj))))))
-                                           (stb slts
-                                                (stb (class-name (class-of obj))
-                                                     (store-id 6 0 obj-id))))))
+                     (jscl::mop-object
+                       (if (and respect-transfer (typep obj (find-class 'dont-transfer)))
+                           (store-id 4 0 0)
+                           (check-id 6 ;; 6 - CLOS object, class and alist of slots follows
+                             (let ((slts (remove-if #'null (mapcar
+                                                             (lambda (slot)
+                                                               (let ((name (getf slot :name)))
+                                                                 (if (slot-boundp obj name)
+                                                                     (cons name (slot-value obj name)))))
+                                                             (jscl::class-slots (class-of obj))))))
+                               (stb slts
+                                    (stb (class-name (class-of obj))
+                                         (store-id 6 0 obj-id)))))))
                      (list    (check-id 4
                                  (stb (cdr obj) (stb (car obj) (store-id 4 0 obj-id)))))
                      (vector (check-id  5
@@ -1701,7 +1707,7 @@
                                                     (cdr code)
                                                     code)))))
                               (labels ((try-store ()
-                                         (let ((,res-len (store-to-buffer ,rvals ,req-buf :start 8)))
+                                         (let ((,res-len (store-to-buffer ,rvals ,req-buf :start 8 :respect-transfer t)))
                                            (if (> ,res-len (jscl::oget ,req-buf "byteLength"))
                                                (progn
                                                  (setf ,cur-buf-len ,res-len)
@@ -1728,7 +1734,8 @@
                                                         local-symbols)
                                              (t (symbol-value ,sym)))
                                            ,req-buf
-                                           :start 4)))
+                                           :start 4
+                                            :respect-transfer t)))
                           ; (format t "REQ: ~A" ,sym)
                           ((jscl::oget (jscl::%js-vref "Atomics") "store") ,ibuf 0 ,res-len)
                           ((jscl::oget (jscl::%js-vref "Atomics") "notify") ,ibuf 0)))
@@ -1745,14 +1752,14 @@
                           (if ,lam
                               (let ((,val (multiple-value-list (apply ,lam (cdr ,sym)))))
                                 (setf (gethash (car ,sym) *main-thread-result-cache*) ,val)
-                                ((jscl::oget (jscl::%js-vref "Atomics") "store") ,ibuf 0 (store-to-buffer ,val ,req-buf :start 4))
+                                ((jscl::oget (jscl::%js-vref "Atomics") "store") ,ibuf 0 (store-to-buffer ,val ,req-buf :start 4  :respect-transfer t))
                                 ((jscl::oget (jscl::%js-vref "Atomics") "notify") ,ibuf 0))
                               (progn
                                 ((jscl::oget (jscl::%js-vref "Atomics") "store") ,ibuf 0 -1)
                                 ((jscl::oget (jscl::%js-vref "Atomics") "notify") ,ibuf 0)
                                 (error "Unregistered main thread lambda execution requested!")))))
                      (3 (let ((,sym (load-from-buffer ,req-buf :start 8))) ;; 3 -- send the result again
-                          ((jscl::oget (jscl::%js-vref "Atomics") "store") ,ibuf 0 (store-to-buffer (gethash ,sym *main-thread-result-cache*) ,req-buf :start 4))
+                          ((jscl::oget (jscl::%js-vref "Atomics") "store") ,ibuf 0 (store-to-buffer (gethash ,sym *main-thread-result-cache*) ,req-buf :start 4  :respect-transfer t))
                           (remhash ,sym *main-thread-result-cache*)
                           ((jscl::oget (jscl::%js-vref "Atomics") "notify") ,ibuf 0)))
                      (4 (let* ((,sym (load-from-buffer ,req-buf :start 8))) ;; 4 -- send a value from FetchCache
