@@ -1345,9 +1345,10 @@
 
 (defmethod-f msg ((ww webworker) data &key transfer (try-count 20))
   (when-worker-ready ww
-    (if transfer
-        ((jscl::oget (worker ww) "postMessage") (make-js-object :|code| data) transfer)
-        ((jscl::oget (worker ww) "postMessage") (make-js-object :|code| data)))))
+    (if (worker ww)
+        (if transfer
+            ((jscl::oget (worker ww) "postMessage") (make-js-object :|code| data) transfer)
+            ((jscl::oget (worker ww) "postMessage") (make-js-object :|code| data))))))
 
 (defmethod-f initialize-instance :after ((ww webworker) &rest args)
   (setf (jscl::oget (worker ww) "onmessage")
@@ -1386,7 +1387,7 @@
 ;;        (jscl::make-new (jscl::%js-vref "Worker") (jscl::lisp-to-js (get-ww-path)))))
 
 (defmethod-f kill ((ww webworker) &optional (try-count 20))
-  ((jscl::oget (worker ww) "terminate"))
+  (if (worker ww) ((jscl::oget (worker ww) "terminate")))
   (setf *worker-cache* (remove-if (lambda (w) (equal w ww)) *worker-cache*)))
 
 (defmethod-f kill ((ww service-worker) &optional (try-count 20))
