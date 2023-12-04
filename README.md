@@ -818,6 +818,21 @@ You can kill the webworker with method `kill`:
 
 **WARINING:** The WebWorker code is not well tested, so bugs (especially in different browsers) may exists. Use with caution! Also, be careful with main thread lambdas - if such lambda throws an exception, the worker will hang, consuming some CPU permanently (al least in the current Firefox). Chrome has strange issues with massive parallel worker jobs, they are much slower when running in Firefox. All other browsers are not tested yet, sorry.
 
+### Binary serialization/deserialization
+
+The `omgui` package introduces two browser-side functions for serialization/deserialization almost any lisp objects. Now supported object types are `integer` (32 bit), `real` (32 bit), `symbol`, `cons/list`, `vector/array` and `mop-object`. Data stored in `ArrayBuffer`/`SharedArrayBuffer` objects to save it, for example, in `indexedDB`. JS-objects and lambdas are stored as `nil` values.
+Example:
+
+```
+(let* ((buf (jscl::make-new (winref "ArrayBuffer") (* 1024 1024))) ;; Allocate 1 MB buffer
+       (len (store-to-buffer my-object buf :start 0))) ;; start offset can be provided, amount of data stored is returned
+  (format t "Loaded data: ~A (~A bytes used)" (load-from-buffer buf) len)) ;; load data back and show it with amount of used memory in bytes
+```
+
+If there is not enough room in the buffer supplied to store an object, `store-to-buffer` will just return a needed size, so you can allocate a 1-byte buffer, call `store-to-buffer`, to determine a needed buffer size, allocate a new buffer of that size and call `store-to-buffer` again.
+
+**NB:** store/load functions retains object equality, but only within a single store/load calls. So, you can store a list, containing multiple references to one mop-object, for example, and, after loading, all the references in the returned list will point to the same object. But, if you call `load-from-buffer` again, all references will point to another instance in the returned list.
+
 ## OMG daemon mode
 
 **WARNING:** the following functionality is in early alpha version now, it will work only in POSIX compatible environments (Linux, MacOS X) and only with `SBCL`, but easily can be ported to another CL compilers.
