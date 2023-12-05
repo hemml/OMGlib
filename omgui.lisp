@@ -1464,7 +1464,6 @@
                          (setf (jscl::oget b1 0) obj)))
                    (setf start start1)))
                (store-val (obj)
-                 ; (format t "SV: ~A ~A" start obj)
                  (typecase obj
                    (integer (sing-val 0 "Int32Array" obj))    ;; 0 - integer
                    (real    (sing-val 1 "Float32Array" obj))  ;; 1 - real
@@ -1484,30 +1483,38 @@
                    (jscl::mop-object
                      (if (and respect-transfer (typep obj (find-class 'dont-transfer)))
                          (store-id-set 4 0 0)
-                         (psp (check-id 6 ;; 6 - CLOS object, class and alist of slots follows
-                                (let ((slts (remove-if #'null (mapcar
-                                                                (lambda (slot)
-                                                                  (let ((name (getf slot :name)))
-                                                                    (if (slot-boundp obj name)
-                                                                        (cons name (slot-value obj name)))))
-                                                                (jscl::class-slots (class-of obj))))))
-                                  (store-id-set 6 0 obj-id)
-                                  (psp (store-val slts))
-                                  (psp (store-val (class-name (class-of obj)))))))))
-                   (list (psp (check-id 4 ;; 4 -- cons
-                                 (store-id-set 4 0 obj-id)
-                                 (psp (store-val (cdr obj)))
-                                 (psp (store-val (car obj))))))
+                         (check-id 6 ;; 6 - CLOS object, class and alist of slots follows
+                           (let ((slts (remove-if #'null (mapcar
+                                                           (lambda (slot)
+                                                             (let ((name (getf slot :name)))
+                                                               (if (slot-boundp obj name)
+                                                                   (cons name (slot-value obj name)))))
+                                                           (jscl::class-slots (class-of obj))))))
+                             (store-id-set 6 0 obj-id)
+                             (psp (store-val slts))
+                             (psp (store-val (class-name (class-of obj))))))))
+                   (list (check-id 4 ;; 4 -- cons
+                            (store-id-set 4 0 obj-id)
+                            (psp (store-val (cdr obj)))
+                            (psp (store-val (car obj)))))
                    (vector (check-id 5
                              (store-id-set 5 0 obj-id) ;; 5 - array, array dims follows
-                             (psp (loop for i below (length obj) do ;; FIXME - store single-typed arrays more compact
-                                    (store-val (aref obj i))))
-                             (psp (store-val (list (length obj))))))
+                             (let ((i 0)
+                                   (lar (length obj)))
+                               (ps (if (< i lar)
+                                       (store-val (aref obj i))
+                                       (pop lambda-stack))
+                                   (incf i))
+                               (psp (store-val (list (length obj)))))))
                    (array  (check-id 5
                              (store-id-set 5 0 obj-id)
-                             (psp (loop for i below (apply #'* (array-dimensions obj)) do     ;; FIXME - store single-typed arrays more compact
-                                    (store-val (aref obj i))))
-                             (psp (store-val (array-dimensions obj)))))
+                             (let ((i 0)
+                                   (lar (apply #'* (array-dimensions obj))))
+                               (ps (if (< i lar)
+                                       (store-val (aref obj i))
+                                       (pop lambda-stack))
+                                   (incf i))
+                               (psp (store-val (array-dimensions obj))))))
                    (jscl::js-object (store-id-set 4 0 0)) ;; JS objects are not serializable, store NIL instead
                    (function (let ((ml (car (rassoc obj *main-lambdas*))))
                                (if ml
@@ -1574,16 +1581,15 @@
                              len
                              (cnt 0)
                              (b22 b2))
+                         (ps (if (< cnt len)
+                                 (setf (aref arr cnt) obj))
+                             (incf cnt)
+                             (when (>= cnt len)
+                               (pop lambda-stack)
+                               (cur-lam arr)))
                          (psp (setf arr (make-array obj))
                               (setf len (apply #'* obj))
-                              (setf (gethash b22 obj-hash) arr)
-                              (if (= len 0)
-                                  (cur-lam arr)
-                                  (ps (setf (aref arr cnt) obj)
-                                      (incf cnt)
-                                      (when (= cnt len)
-                                        (pop lambda-stack)
-                                        (cur-lam arr)))))))))
+                              (setf (gethash b22 obj-hash) arr))))))
               (6 ;; MOP object
                  (multiple-value-bind (obj fnd) (gethash b2 obj-hash)
                    (if fnd
@@ -1758,7 +1764,7 @@
                                              (t (symbol-value ,sym)))
                                            ,req-buf
                                            :start 4
-                                            :respect-transfer t)))
+                                           :respect-transfer t)))
                           ; (format t "REQ: ~A" ,sym)
                           ((jscl::oget (jscl::%js-vref "Atomics") "store") ,ibuf 0 ,res-len)
                           ((jscl::oget (jscl::%js-vref "Atomics") "notify") ,ibuf 0)))
