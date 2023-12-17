@@ -14,8 +14,6 @@
 
 (in-package :omgwidgets)
 
-(defparameter-f *last-edt-fld* nil)
-
 (defclass-f omg-widget ()
   ((root :accessor root)
    (id :initform (omgui::random-id)
@@ -505,8 +503,6 @@
 ;;;;;;;;;;;;;; editable-field ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod-f to-edit-state ((w editable-field))
-  (if *last-edt-fld*
-      (to-show-state *last-edt-fld*))
   (let ((ok-button (create-element "button" :|innerHTML| "update"
                                             :|style.marginLeft| "1em"))
         (cancel-button (create-element "button" :|innerHTML| "cancel"
@@ -520,8 +516,7 @@
               (if res
                   (progn
                     (setf (slot-value w 'value) res)
-                    (to-show-state w)
-                    (setf *last-edt-fld* nil))))))
+                    (to-show-state w))))))
     (setf (jscl::oget cancel-button "onclick")
           (lambda (ev)
             (to-show-state w)
