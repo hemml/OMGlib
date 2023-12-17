@@ -1,7 +1,7 @@
 (defpackage :omgwidgets
   (:use cl omg jscl omgui omgutil)
   (:export omg-widget root render-widget redraw
-           editable-field input-size value
+           editable-field input-size value ok cancel val
            modal-dialog-window
            progress-bar width height bg-style fg-style set-progress
            list-view elements current-position transfer-chunk list-view-element-class
@@ -525,7 +525,7 @@
     (setf (jscl::oget cancel-button "onclick")
           (lambda (ev)
             (to-show-state w)
-            (if (cancel-callback w) (funcall (cancel-callback w)))))
+            (if (cancel-callback w) (funcall (cancel-callback w) w))))
     (setf (slot-value w 'edt-blk)
           (create-element "span" :|style.display| "inline-block"
             :append-elements `(,edit-fld ,cancel-button ,ok-button)))
