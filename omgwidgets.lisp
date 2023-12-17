@@ -795,7 +795,11 @@
              (xadd (* 0.01 (- ymax ymin)))
              (yadd (* 0.01 (- ymax ymin))))
         (setf (slot-value g 'need-rescale) nil)
-        (rescale g :xmin (- xmin xadd) :xmax (+ xmax xadd) :ymin (- ymin yadd) :ymax (+ ymax yadd)))))
+        (if (and (> xadd 0) (> yadd 0))
+          (rescale g :xmin (- xmin xadd)
+                     :xmax (+ xmax xadd)
+                     :ymin (- ymin yadd)
+                     :ymax (+ ymax yadd))))))
 
 (defun-f guess-delta (dx nt)
   (let* ((delta (/ dx nt))
