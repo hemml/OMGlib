@@ -833,6 +833,52 @@ If there is not enough room in the buffer supplied to store an object, `store-to
 
 **NB:** store/load functions retains object equality, but only within a single store/load calls. So, you can store a list, containing multiple references to one mop-object, for example, and, after loading, all the references in the returned list will point to the same object. But, if you call `load-from-buffer` again, all references will point to another instance in the returned list.
 
+### indexedDB
+
+There are some useful macros in `omgui` package to work with IndexedDB:
+
+`setup-indexed-db` (the code will be executed only when database is not exists):
+```
+(setup-indexed-db (db "MyDatabase")
+  (make-instance 'idb-object-store :connection db :name "table1"))
+  (make-instance 'idb-object-store :connection db :name "table2" :key "MyKey" :auto-increment t))
+```
+
+`indexed-db-add` / `indexed-db-put` - add/modify an object to the store:
+```
+(indexed-db-add "MyDatabase" "table1" key val ;; Key must be a string, val can be any object, suitable for binary serialization (see above)
+  :when-ok (lambda ()
+             (jslog "The data is saved!")))))))))))
+  :when-err (lambda ()
+             (jslog "The data is not saved!")))))))))))
+```
+
+`indexed-db-get` - get a value for a key:
+```
+(indexed-db-get (val ("MyDatabase" "table1" key))
+  (jslog "Value loaded:" val)) ;; will be called asynchronously, when data is retrieved.
+```
+
+`indexed-db-delete` - delete a key from the store:
+```
+(indexed-db-delete ("MyDatabase" "table1" key))
+  (jslog "The key is deleted!")) ;; will be called asynchronously
+```
+
+`indexed-db-get-all-keys` - get e list of all keys in the store
+```
+(indexed-db-get-all-keys (lst ("MyDatabase" "table1"))
+  (jslog "The keys are:") ;; will be called asynchronously
+  (map nil #'jslog lst))
+```
+
+`if-idb-key` - execute a code when the key exists/not exists:
+```
+(if-idb-key ("MyDatabase" "table1" key)
+  (jslog "Key exists!") ;; will be called asynchronously if the key is exists
+  (jslog "Key not exists!")) ;; will be called asynchronously if the key is not exists
+```
+
 ## OMG daemon mode
 
 **WARNING:** the following functionality is in early alpha version now, it will work only in POSIX compatible environments (Linux, MacOS X) and only with `SBCL`, but easily can be ported to another CL compilers.
