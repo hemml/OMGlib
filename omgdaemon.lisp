@@ -430,10 +430,11 @@
                         (bt:make-thread
                           (lambda ()
                             (format t "Sending cmd to: ~A ~A~%" vers v)
-                            (send-cmd-to vers `(progn
-                                                 (setf omgdaemon::*omg-last-version* ,v)
-                                                 (commit-notify ,v)))
-                            (format t "Cmd to ~A sent!~%" vers)))
+                            (ignore-errors
+                              (send-cmd-to vers `(ignore-errors
+                                                   (setf omgdaemon::*omg-last-version* ,v)
+                                                   (commit-notify ,v)))
+                              (format t "Cmd to ~A sent!~%" vers))))
                         (sleep 1))
                       (bt:with-lock-held (omg::*giant-hash-lock*)
                         (loop for vers being each hash-key of *forks* when vers collect vers))))
