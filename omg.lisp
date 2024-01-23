@@ -1221,7 +1221,8 @@ if(!OMG.inServiceWorker) {
                        (progn
                          (if (not nowait) (setf (gethash-lock key wlist) `(,(current-thread) ,sem nil)))
                          (send-text sock jscmd)
-                         (setf (slot-value *current-session* 'last-active) (get-universal-time))
+                         (if *current-session*
+                             (setf (slot-value *current-session* 'last-active) (get-universal-time)))
                          (if (not nowait)
                              (if (wait-on-semaphore sem :timeout 600)
                                  (let ((ret (let ((*read-eval* nil))
@@ -1253,9 +1254,12 @@ if(!OMG.inServiceWorker) {
 
 (defvar-f *boot-done* nil)
 
+(in-package :omg)
+
 (defun boot-f ()
   "The boot code, will be executed on the browser-side just after the page is loaded and socket connected."
-  (setf (slot-value *current-session* 'last-active) (get-universal-time))
+  (if *current-session*
+      (setf (slot-value *current-session* 'last-active) (get-universal-time)))
   (remote-exec `(if (not *boot-done*)
                     (progn
                       (defun jscl::omg-write-to-string (&rest forms)
@@ -1287,7 +1291,8 @@ if(!OMG.inServiceWorker) {
                 (lambda ()
                   (let ((*current-session* ses)
                         (*package* (find-package :omg)))
-                    (setf (slot-value *current-session* 'last-active) (get-universal-time))
+                    (if *current-session*
+                        (setf (slot-value *current-session* 'last-active) (get-universal-time)))
                     (boot-f)))
                 :name (concatenate 'string (symbol-name sid) "-BOOT"))
               *omg-thread-list*)))
@@ -1309,7 +1314,8 @@ if(!OMG.inServiceWorker) {
             (let* ((m (subseq msg 0 1))
                    (rid (intern (subseq msg 1 (+ |sid-length| 1)) :omg))
                    (val (subseq msg (+ |sid-length| 1))))
-              (setf (slot-value ses 'last-active) (get-universal-time))
+              (if ses
+                 (setf (slot-value ses 'last-active) (get-universal-time)))
               (cond ((equal m "~")
                      (let* ((wlist (wait-list ses))
                             (trsem (gethash-lock rid wlist)))
@@ -1422,7 +1428,7 @@ self.postMessage('BOOT')
                     (cmd (omg-read s))
                     (op (car cmd))
                     (args (cadr cmd)))
-               (if (and *current-session* (not (equal session-id 'no-session)))
+               (if (and (not (equal session-id 'no-session)) *current-session*)
                    (setf (slot-value *current-session* 'last-active) (get-universal-time)))
                (if (gethash-lock op *rpc-functions*)
                  (rpc-wrapper op args *package*)
@@ -1446,7 +1452,7 @@ self.postMessage('BOOT')
                (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
                       (*current-session* (find-session session-id))
                       (*package* (find-package (omg-read s))))
-                 (if (not (equal session-id 'no-session))
+                 (if (and *current-session* (not (equal session-id 'no-session)))
                      (setf (slot-value *current-session* 'last-active) (get-universal-time)))
                  (takit (omg-read s) (omg-read s))))))
           ((equal uri (concatenate 'string *root-path* *ws-path*))
