@@ -107,7 +107,8 @@
                                (lambda (kv)
                                  (set (car kv) (cdr kv)))
                                *server-set-list*)
-                          (setf *server-set-list* nil))))))))))
+                          (setf *server-set-list* nil)))))))))
+        (sb-debug::disable-debugger))
     (loop while (and (open-stream-p st-i) (open-stream-p st-o)) do
       (let* ((cmd (ignore-errors (read st-i nil eofv)))
              (res (if (not (equal cmd eofv)) (get-cmd-res cmd))))
@@ -576,6 +577,7 @@
     (bt:start-multiprocessing)
     (setf *main-lock* (bt:make-lock))
     (ensure-version-working +devel-version+)
+    (sb-debug::disable-debugger)
     (proxy *proxy-port*)))
 
 (defun make-omg-daemon (port &key (swank-comm-style :spawn)) ;; Dump daemon image, specify proxy port
