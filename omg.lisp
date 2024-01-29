@@ -1479,55 +1479,59 @@ self.postMessage('BOOT')
   (start-multiprocessing) ;; bordeaux-threads requirement
   (if (not *giant-hash-lock*)
       (setf *giant-hash-lock* (bt:make-lock)))
-  (setf *serv* (apply #'clack:clackup
-                      `(,#'serv
-                        :port ,*port*
-                        :ssl ,(has-ssl-p)
-                        :ssl-key-file ,*ssl-key*
-                        :ssl-cert-file ,*ssl-cert*
-                        ,@*last-args*)))
-  (push (bt:make-thread
-          (lambda ()
-            (loop do
-              (let ((tim (get-universal-time)))
-                (labels ((clwl (h)
-                           (map nil
-                             (lambda (x)
-                               (let ((t1 (cdr (assoc :time (gethash-lock x h)))))
-                                 (if (and t1 (> (- tim t1) *wl-timeout*))
-                                     (progn
-                                       (remhash x h)
-                                       (unintern x)))))
-                             (loop for k being each hash-key of h collect k))))
-                  (map nil #'clwl (list *gimme-wait-list* *takit-wait-list*))
-                  (map nil
-                    (lambda (sid)
-                      (let ((ses (gethash-lock sid *session-list*)))
-                        (if (and (disconnected-at ses)
-                                 (> (- (get-universal-time) (disconnected-at ses))
-                                    *session-timeout*))
-                            (progn
-                              (maphash (lambda (k v)
-                                         (if (and (car v) (not (equal (current-thread) (car v))) (thread-alive-p (car v)))
-                                             (destroy-thread (car v)))
-                                         (unintern k))
-                                       (wait-list ses))
-                              (map nil
-                                   (lambda (id)
-                                     (remhash id *remote-objects*))
-                                   (loop for obj being each hash-value of *remote-objects*
-                                         when (equal (session obj) ses) collect (id obj)))
-                              (remhash sid *session-list*)
-                              (remove-all-listeners (session-ws ses))
-                              (unintern sid)))))
-                    (loop for k being each hash-key of *session-list*
-                      when (typep (gethash-lock k *session-list*) 'remote-object) collect k))
-                  (map nil
-                    (lambda (thr)
-                      (delete thr *omg-thread-list*))
-                    (remove-if #'bt:thread-alive-p *omg-thread-list*)))
-                (sleep 60)))))
-        *omg-thread-list*))
+  (setf *serv*
+        (ignore-errors
+          (apply #'clack:clackup
+                 `(,#'serv
+                   :port ,*port*
+                   :ssl ,(has-ssl-p)
+                   :ssl-key-file ,*ssl-key*
+                   :ssl-cert-file ,*ssl-cert*
+                   ,@*last-args*))))
+  (if *serv*
+      (push (bt:make-thread
+              (lambda ()
+                (loop do
+                  (let ((tim (get-universal-time)))
+                    (labels ((clwl (h)
+                               (map nil
+                                 (lambda (x)
+                                   (let ((t1 (cdr (assoc :time (gethash-lock x h)))))
+                                     (if (and t1 (> (- tim t1) *wl-timeout*))
+                                         (progn
+                                           (remhash x h)
+                                           (unintern x)))))
+                                 (loop for k being each hash-key of h collect k))))
+                      (map nil #'clwl (list *gimme-wait-list* *takit-wait-list*))
+                      (map nil
+                        (lambda (sid)
+                          (let ((ses (gethash-lock sid *session-list*)))
+                            (if (and (disconnected-at ses)
+                                     (> (- (get-universal-time) (disconnected-at ses))
+                                        *session-timeout*))
+                                (progn
+                                  (maphash (lambda (k v)
+                                             (if (and (car v) (not (equal (current-thread) (car v))) (thread-alive-p (car v)))
+                                                 (destroy-thread (car v)))
+                                             (unintern k))
+                                           (wait-list ses))
+                                  (map nil
+                                       (lambda (id)
+                                         (remhash id *remote-objects*))
+                                       (loop for obj being each hash-value of *remote-objects*
+                                             when (equal (session obj) ses) collect (id obj)))
+                                  (remhash sid *session-list*)
+                                  (remove-all-listeners (session-ws ses))
+                                  (unintern sid)))))
+                        (loop for k being each hash-key of *session-list*
+                          when (typep (gethash-lock k *session-list*) 'remote-object) collect k))
+                      (map nil
+                        (lambda (thr)
+                          (delete thr *omg-thread-list*))
+                        (remove-if #'bt:thread-alive-p *omg-thread-list*)))
+                    (sleep 60)))))
+            *omg-thread-list*)
+      (warn "Server not started!")))
 
 (defun kill-server ()
   (map nil #'clrhash (list *gimme-wait-list* *takit-wait-list* *session-list*))
