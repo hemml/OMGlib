@@ -347,7 +347,7 @@
                                             (send-cmd-to version
                                               `(progn
                                                 (setf swank::*loopback-interface* "0.0.0.0")
-                                                (setf swank:*globally-redirect-io* t)
+                                                (setf swank::*globally-redirect-io* t)
                                                 (bt:make-thread
                                                   (lambda ()
                                                     (swank:create-server :port 4008 :dont-close t :style ,*swank-comm-style*)))))
