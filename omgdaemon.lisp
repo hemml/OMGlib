@@ -111,9 +111,12 @@
         (sb-debug::disable-debugger))
     (loop while (and (open-stream-p st-i) (open-stream-p st-o)) do
       (let* ((cmd (ignore-errors (read st-i nil eofv)))
-             (res (if (not (equal cmd eofv)) (get-cmd-res cmd))))
+             (res (if (and cmd (not (equal cmd eofv))) (get-cmd-res cmd))))
+        (if (or (not cmd) (equal cmd eofv))
+            (uiop:quit))
         (format st-o "~A~%" res)
-        (force-output st-o)))))
+        (force-output st-o)))
+    (uiop:quit)))
 
 (defun version-file-path (version) ;; Return a pathname for version image
   (if (or (position #\/ version) ;; Version name included into filename, so it cannot include "/" symbol
@@ -356,7 +359,9 @@
                                                          (open-stream-p st-do))
                                               do (let* ((eofv (gensym))
                                                         (cmd (ignore-errors (read st-di nil eofv)))
-                                                        (res (if (not (equal cmd eofv)) (get-cmd-res cmd))))
+                                                        (res (if (and cmd (not (equal cmd eofv))) (get-cmd-res cmd))))
+                                                   (if (or (not cmd) (equal cmd eofv))
+                                                       (return))
                                                    (format st-do "~A~%" res)
                                                    (force-output st-do))))
                                           :name "devel processing"))))
@@ -502,7 +507,7 @@
                                         (sb-bsd-sockets:socket-receive
                                           (usocket:socket s1) buf nil :element-type '(unsigned-byte 8)))
                        while (and *proxy-sock* nb (> nb 0))
-                       for rs = (sb-bsd-sockets:socket-send (usocket:socket s2) buf nb)
+                       for rs = (ignore-errors (sb-bsd-sockets:socket-send (usocket:socket s2) buf nb))
                        until (not rs)))))
       (unwind-protect
         (multiple-value-bind (vers sb sv) ;; Process input, before version cookie will be found, or before end of headers reached
