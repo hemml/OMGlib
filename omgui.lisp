@@ -1889,7 +1889,7 @@
          (icon-url-path (format nil "~A.~A" (omg::random-string 20) icon-ext)))
     (add-serve-path manifest-path
                     `(200 (:content-type "text/javascript; charset=utf-8")
-                          (,(format nil "{\"name\":\"~A\",\"short_name\":\"~A\",\"display\":\"~A\",\"start_url\":\"~A/\",\"theme_color\":\"~A\",\"background_color\":\"~A\",\"icons\"\: [{\"src\": \"~A~A\",\"sizes\": \"~A\",\"type\": \"~A\"}]}"
+                          (,(format nil "{\"name\":\"~A\",\"short_name\":\"~A\",\"display\":\"~A\",\"start_url\":\"~A\",\"theme_color\":\"~A\",\"background_color\":\"~A\",\"icons\"\: [{\"src\": \"~A~A\",\"sizes\": \"~A\",\"type\": \"~A\"}]}"
                                     name short-name display omg::*root-path* theme-color background-color
                                     omg::*root-path* icon-url-path icon-size icon-type))))
     (add-serve-path icon-url-path
