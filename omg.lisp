@@ -1221,16 +1221,16 @@ if(!OMG.inServiceWorker) {
                        (progn
                          (if (not nowait) (setf (gethash-lock key wlist) `(,(current-thread) ,sem nil)))
                          (send-text sock jscmd)
-                         (if *current-session*
-                             (setf (slot-value *current-session* 'last-active) (get-universal-time)))
                          (if (not nowait)
                              (if (wait-on-semaphore sem :timeout 600)
                                  (let ((ret (let ((*read-eval* nil))
                                               (omg-read-from-string (caddr (gethash-lock key wlist))))))
                                    (remhash key wlist)
                                    (unintern key)
-                                   (apply #'values ret))
-                                 (error "Timeout"))))
+                                   (if *current-session*
+                                       (setf (slot-value *current-session* 'last-active) (get-universal-time)))
+                                   (apply #'values ret)))))
+                                 ;;(error "Timeout"))))
                        (if (equal sock-state :closed)
                            (progn
                              (emit :close sock)
