@@ -1213,24 +1213,31 @@ if(!OMG.inServiceWorker) {
                                       (format nil "~A;~A;"
                                           pkg-hook
                                           rcmd)
-                                      (format nil "~A;OMG.root_ws.send((\"~~~A\"+~A));"
+                                      (format nil "OMG.root_ws.send((\"^~A\"));~A;OMG.root_ws.send((\"~~~A\"+~A));"
+                                          (symbol-name key)
                                           pkg-hook
                                           (symbol-name key)
-                                          rcmd))))
+                                          rcmd)))
+                           (timeout-chunk 5))
                      (if (equal sock-state :open)
                        (progn
-                         (if (not nowait) (setf (gethash-lock key wlist) `(,(current-thread) ,sem nil)))
+                         (if (not nowait) (setf (gethash-lock key wlist) (list (current-thread) sem nil nil)))
                          (send-text sock jscmd)
-                         (if (not nowait)
-                             (if (wait-on-semaphore sem :timeout 600)
-                                 (let ((ret (let ((*read-eval* nil))
-                                              (omg-read-from-string (caddr (gethash-lock key wlist))))))
-                                   (remhash key wlist)
-                                   (unintern key)
-                                   (if *current-session*
-                                       (setf (slot-value *current-session* 'last-active) (get-universal-time)))
-                                   (apply #'values ret)))))
-                                 ;;(error "Timeout"))))
+                         (unless nowait
+                           (labels ((get-res (&key (timeout 600) retry)
+                                      (if (wait-on-semaphore sem :timeout timeout-chunk)
+                                          (let ((ret (let ((*read-eval* nil))
+                                                       (omg-read-from-string (caddr (gethash-lock key wlist))))))
+                                            (remhash key wlist)
+                                            (unintern key)
+                                            (if *current-session*
+                                                (setf (slot-value *current-session* 'last-active) (get-universal-time)))
+                                            ret)
+                                          (when (and (or retry (cadddr (gethash-lock key wlist)))
+                                                     (> timeout 0)
+                                                     (equal (ready-state (socket *current-session*)) :open))
+                                            (get-res :timeout (- timeout timeout-chunk))))))
+                             (apply #'values (get-res :retry t)))))
                        (if (equal sock-state :closed)
                            (progn
                              (emit :close sock)
@@ -1326,10 +1333,14 @@ if(!OMG.inServiceWorker) {
               (cond ((equal m "~")
                      (let* ((wlist (wait-list ses))
                             (trsem (gethash-lock rid wlist)))
-                      (if trsem
-                         (progn
-                           (setf (gethash-lock rid wlist) (list (car trsem) (cadr trsem) val))
-                           (signal-semaphore (cadr trsem)))))))))))
+                      (when trsem
+                        (setf (caddr trsem) val)
+                        (signal-semaphore (cadr trsem)))))
+                    ((equal m "^")
+                     (let* ((wlist (wait-list ses))
+                            (trsem (gethash-lock rid wlist)))
+                      (when trsem
+                        (setf (cadddr trsem) t)))))))))
     (on :close ws
        (lambda (&key code reason)
         (format t "WS closed (~a ~a)~%" code reason)
