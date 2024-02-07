@@ -1312,7 +1312,12 @@ if(!OMG.inServiceWorker) {
                     (setf (slot-value new-ses 'socket) ws)
                     (remhash (get-id ses) *session-list*)
                     (setf ses new-ses)
-                    (setf sid new-sid))))
+                    (setf sid new-sid))
+                  (progn
+                    (remhash (get-id ses) *session-list*)
+                    (setf (slot-value ses 'ses-id) new-sid)
+                    (setf sid new-sid)
+                    (setf (gethash-lock new-sid *session-list*) ses))))
             (let* ((m (subseq msg 0 1))
                    (rid (intern (subseq msg 1 (+ |sid-length| 1)) :omg))
                    (val (subseq msg (+ |sid-length| 1))))
@@ -1536,6 +1541,9 @@ self.postMessage('BOOT')
       (warn "Server not started!")))
 
 (defun kill-server ()
+  (loop for s being each hash-value of *session-list* when (equal (ready-state (socket s)) :open) do
+    (ignore-errors
+      (close-connection (socket s))))
   (map nil #'clrhash (list *gimme-wait-list* *takit-wait-list* *session-list*))
   (map nil #'bt:destroy-thread (remove-if-not #'bt:thread-alive-p *omg-thread-list*))
   (setf *omg-thread-list* nil)
