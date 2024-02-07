@@ -1309,6 +1309,8 @@ if(!OMG.inServiceWorker) {
                   (progn
                     (setf (disconnected-at ses) 0)
                     (setf (disconnected-at new-ses) nil)
+                    (setf (slot-value new-ses 'socket) ws)
+                    (remhash (get-id ses) *session-list*)
                     (setf ses new-ses)
                     (setf sid new-sid))))
             (let* ((m (subseq msg 0 1))
