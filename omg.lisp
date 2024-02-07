@@ -1246,7 +1246,7 @@ if(!OMG.inServiceWorker) {
           (exec)
           (par-map (lambda (s) (with-session s (exec)))
                    (loop for s being the hash-values of *session-list*
-                     when (equal :open (ready-state (socket s))) collect (with-session s (exec))))))))
+                     when (equal :open (ready-state (socket s))) collect s))))))
 
 (defvar *pre-boot-functions* nil)
 (defvar *boot-functions* nil)
