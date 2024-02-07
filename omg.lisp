@@ -1232,21 +1232,26 @@ if(!OMG.inServiceWorker) {
                                             (unintern key)
                                             (if *current-session*
                                                 (setf (slot-value *current-session* 'last-active) (get-universal-time)))
-                                            ret)
+                                            (list ret))
                                           (when (and (or retry (cadddr (gethash-lock key wlist)))
                                                      (> timeout 0)
                                                      (equal (ready-state (socket *current-session*)) :open))
                                             (get-res :timeout (- timeout timeout-chunk))))))
-                             (apply #'values (get-res :retry t)))))
+                             (get-res :retry t))))
                        (if (equal sock-state :closed)
                            (progn
                              (emit :close sock)
                              nil))))))
       (if *current-session*
-          (exec)
-          (par-map (lambda (s) (with-session s (exec)))
-                   (loop for s being the hash-values of *session-list*
-                     when (equal :open (ready-state (socket s))) collect s))))))
+          (let ((r (exec)))
+            (if r
+                (apply #'values (car r))
+                (error "Timeout in remote-exec")))
+          (mapcar #'caar
+                  (remove-if #'null
+                    (par-map (lambda (s) (with-session s (exec)))
+                             (loop for s being the hash-values of *session-list*
+                               when (equal :open (ready-state (socket s))) collect s))))))))
 
 (defvar *pre-boot-functions* nil)
 (defvar *boot-functions* nil)
