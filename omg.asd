@@ -6,7 +6,7 @@
   :homepage "https://github.com/hemml/OMGlib"
   :source-control "https://github.com/hemml/OMGlib.git"
   :depends-on ("clack" "websocket-driver-server" "bordeaux-threads" "trivial-utf-8" "media-types" "hunchentoot"
-               "pngload" "skippy" "cl-jpeg" "swank" "osicat" "usocket" "uiop" "find-port" "inferior-shell")
+               "pngload" "skippy" "cl-jpeg" "swank" "osicat" "usocket" "uiop" "find-port" "inferior-shell" "cl-parallel")
   :build-operation "static-program-op"
   :components ((:static-file "README.md")
                (:static-file "LICENSE")

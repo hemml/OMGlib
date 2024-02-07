@@ -1,5 +1,5 @@
 (defpackage :omg
-  (:use cl clack websocket-driver bordeaux-threads trivial-utf-8)
+  (:use cl clack websocket-driver bordeaux-threads trivial-utf-8 parallel)
   (:import-from :event-emitter #:emit)
   (:export add-to-boot       ;; add a code to boot sequence
            set-boot          ;; set boot code
@@ -1244,8 +1244,9 @@ if(!OMG.inServiceWorker) {
                              nil))))))
       (if *current-session*
           (exec)
-          (loop for s being the hash-values of *session-list*
-            when (equal :open (ready-state (socket s))) collect (with-session s (exec)))))))
+          (par-map (lambda (s) (with-session s (exec)))
+                   (loop for s being the hash-values of *session-list*
+                     when (equal :open (ready-state (socket s))) collect (with-session s (exec))))))))
 
 (defvar *pre-boot-functions* nil)
 (defvar *boot-functions* nil)
