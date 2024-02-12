@@ -1511,6 +1511,8 @@ self.postMessage('BOOT')
                    :ssl ,(has-ssl-p)
                    :ssl-key-file ,*ssl-key*
                    :ssl-cert-file ,*ssl-cert*
+                   :debug nil
+                   :use-default-middlewares nil
                    ,@*last-args*))))
   (if *serv*
       (push (bt:make-thread
