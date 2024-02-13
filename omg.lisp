@@ -45,7 +45,8 @@
 (defvar *html-path* "") ;; the path (relative to *root-path*) for simple html page with injcetced js
 (defvar *js-path* "j")  ;; the path of js for injection (relative to *root-path*)
 (defvar *ws-path* "s")  ;; websocket path (relative to *root-path*)
-(defvar *rpc-path* "r") ;; rpc call path (relative to *root-path*)
+(defvar *rpc-path* "r") ;; rpc call path (relative to *root-path*) without multiple values support, for compatibility only, will be removed
+(defvar *rpc-path-m* "m") ;; rpc call path (relative to *root-path*)
 (defvar *gimme-path* "g") ;; the path to query undefined symbols and functions (relative to *root-path*)
 (defvar *takit-path* "t") ;; the auxilary path, nedded to return macro expansion results if *local-compile* is set
 (defvar *service-worker-path* "sw") ;; path to the service worker code
@@ -132,12 +133,12 @@
   (setf (gethash-lock name *rpc-functions*) t)
   (setf (gethash-lock name *exportable-expressions*)
        `(,def ,name (&rest argl)
-          (funcall (jscl::oget (jscl::%js-vref "self") "OMG" "RPC")
-                   (let ((*package* (find-package ,(package-name *package*))))
-                     (jscl::omg-write-to-string (intern (jscl::oget (jscl::%js-vref "self") "OMG" "session_id") :OMG)
-                                                (intern ,(package-name *package*))
-                                                (list ',name argl)))))))
-
+          (apply #'values
+            ((jscl::oget (jscl::%js-vref "self") "OMG" "RPC2")
+             (let ((*package* (find-package ,(package-name *package*))))
+               (jscl::omg-write-to-string (intern (jscl::oget (jscl::%js-vref "self") "OMG" "session_id") :OMG)
+                                          (intern ,(package-name *package*))
+                                          (list ',name argl))))))))
 
 (defmacro defun-r (name args &rest body)
   "Define a server-side function and allow to call it from browser side"
@@ -578,7 +579,7 @@ if(!OMG.inServiceWorker) {
     return sym
   }
 
-  OMG.RPC=(cmd)=>{
+  OMG.RPC=(cmd)=>{ // will be removed
     let xhr=new XMLHttpRequest()
     xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', false)
     xhr.send(cmd)
@@ -589,7 +590,18 @@ if(!OMG.inServiceWorker) {
     }
   }
 
-  OMG.AsyncRPC=(cmd, cb)=>{
+  OMG.RPC2=(cmd)=>{
+    let xhr=new XMLHttpRequest()
+    xhr.open('POST', OMG.Base+'" *root-path* *rpc-path-m* "', false)
+    xhr.send(cmd)
+    if (xhr.status === 200) {
+      return eval(xhr.response)
+    } else {
+      throw new Error('Cannot call RPC')
+    }
+  }
+
+  OMG.AsyncRPC=(cmd, cb)=>{ // will be removed
     let xhr=new XMLHttpRequest()
     xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', true)
     xhr.onload=function (e) {
@@ -606,6 +618,25 @@ if(!OMG.inServiceWorker) {
     }
     xhr.send(cmd)
   }
+
+  OMG.AsyncRPC2=(cmd, cb)=>{
+    let xhr=new XMLHttpRequest()
+    xhr.open('POST', OMG.Base+'" *root-path* *rpc-path-m* "', true)
+    xhr.onload=function (e) {
+      if (xhr.readyState === 4) {
+        if (xhr.status === 200) {
+          cb(eval(xhr.response))
+        } else {
+          throw new Error('Cannot call RPC')
+        }
+      }
+    }
+    xhr.onerror = function (e) {
+      throw new Error('Cannot call RPC')
+    }
+    xhr.send(cmd)
+  }
+
 
   OMG.OriginalFP=jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue
   jscl.packages.CL.symbols['FIND-PACKAGE'].fvalue=(values,pkg)=>{
@@ -1111,16 +1142,17 @@ if(!OMG.inServiceWorker) {
                     `(500 (:content-type "text/plain; charset=utf-8") ("Timeout"))))))
         `(404 (:content-type "text/plain; charset=utf-8") ("")))))
 
-(defun rpc-wrapper (op args pkg)
+(defun rpc-wrapper (op args pkg &optional mv)
   "The wrapper for RPC requests, used to allow call browser-side functions from RPC funcs."
    (let* ((sem (make-semaphore))
           (key (random-key *gimme-wait-list* |sid-length|)))
       (setf (gethash-lock key *gimme-wait-list*) `((:sem . ,sem) (:time . ,(get-universal-time)) (:symbol . ,(intern "omg-rpc-symbol" pkg))))
       (push (bt:make-thread
               (lambda ()
-                (put-wl-result (compile-to-js (omg-data-to-compile-form (apply op args))
-                                              pkg)
-                               key))
+                (let ((res (multiple-value-list (apply op args))))
+                  (put-wl-result (compile-to-js (omg-data-to-compile-form (if mv res (car res)))
+                                                pkg)
+                                 key)))
               :initial-bindings `((*current-res* . ',key)
                                   (*current-session* . ,*current-session*)
                                   (*in-rpc* . t)))
@@ -1441,7 +1473,7 @@ self.postMessage('BOOT')
                   :Cross-Origin-Opener-Policy "same-origin"
                   :Cross-Origin-Embedder-Policy "require-corp")
                  (,(get-root-html))))
-          ((and (equal uri (concatenate 'string *root-path* *rpc-path*))
+          ((and (equal uri (concatenate 'string *root-path* *rpc-path*)) ;; will be removed
                 (getf env :content-length))
            (with-input-from-string (s (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
                                           "\\n"
@@ -1456,6 +1488,22 @@ self.postMessage('BOOT')
                    (setf (slot-value *current-session* 'last-active) (get-universal-time)))
                (if (gethash-lock op *rpc-functions*)
                  (rpc-wrapper op args *package*)
+                `(404 (:content-type "text/plain; charset=utf-8") (""))))))
+          ((and (equal uri (concatenate 'string *root-path* *rpc-path-m*))
+                (getf env :content-length))
+           (with-input-from-string (s (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
+                                          "\\n"
+                                          (make-string 1 :initial-element #\newline)))
+             (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
+                    (*current-session* (find-session session-id))
+                    (*package* (find-package (omg-read s)))
+                    (cmd (omg-read s))
+                    (op (car cmd))
+                    (args (cadr cmd)))
+               (if (and (not (equal session-id 'no-session)) *current-session*)
+                   (setf (slot-value *current-session* 'last-active) (get-universal-time)))
+               (if (gethash-lock op *rpc-functions*)
+                 (rpc-wrapper op args *package* t)
                 `(404 (:content-type "text/plain; charset=utf-8") (""))))))
           ((and (equal uri (concatenate 'string *root-path* *gimme-path*))
                 (getf env :content-length))

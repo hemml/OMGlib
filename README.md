@@ -506,8 +506,12 @@ Also, you can asynchronously call any RPC function using `async-bind` macro:
 
 ```
 (async-bind (res (some-rpc-function arg1 arg2))
-  (jslog res) ;; The code will be executed asynchronously after RPC call completion
+  (jslog res)) ;; The code will be executed asynchronously after RPC call completion
+
+(async-bind ((r1 r2 r3) (some-rpc-function arg1 arg2)) ;; multiple return values
+  (jslog r1 r2 r3))
 ```
+
 
 ### CLOS
 

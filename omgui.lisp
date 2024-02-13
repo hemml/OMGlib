@@ -130,15 +130,23 @@
   ((jscl::oget (winref "sessionStorage") "setItem") (jscl::lisp-to-js key) val))
 
 
-(defmacro-f async-bind (vcmd &rest cod)
-  (let ((res (gensym)))
-    `(funcall (jscl::oget (jscl::%js-vref "jscl") "omgAsyncRPC")
-              (write-to-string (list ,(package-name *package*)
-                                     ',(caadr vcmd)
-                                     (list ,@(cdadr vcmd))
-                                     omg::*session-id*))
-              (lambda (,(car vcmd))
-                ,@cod))))
+(def-local-macro-f async-bind (vcmd &rest cod)
+  (let* ((res (gensym))
+         (rst (gensym))
+         (vrs (car vcmd))
+         (ll (if (listp vrs)
+                `(,(car vrs) &optional ,@(cdr vrs) &rest ,rst)
+                `(,vrs &rest ,rst))))
+    `(progn
+       (funcall (jscl::oget (jscl::%js-vref "OMG") "AsyncRPC2")
+                (jscl::omg-write-to-string ',(omg::get-id omg::*current-session*)
+                                           ',(intern (package-name *package*))
+                                           (list ',(caadr vcmd) (list ,@(cdadr vcmd))))
+                (lambda (,res)
+                  (destructuring-bind ,ll ,res
+                    ,@cod)))
+       nil)))
+
 
 (defun-f make-svg (&rest cod)
   (labels ((process-cmd (cmd args)
