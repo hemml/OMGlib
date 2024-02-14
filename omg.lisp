@@ -1252,34 +1252,37 @@ if(!OMG.inServiceWorker) {
                                           rcmd)))
                            (timeout-chunk 5))
                      (if (equal sock-state :open)
+                         (progn
+                           (if (not nowait) (setf (gethash-lock key wlist) (list (current-thread) sem nil nil)))
+                           (send-text sock jscmd)
+                           (if (not nowait)
+                               (labels ((get-res (&key (timeout 600) retry)
+                                          (if (wait-on-semaphore sem :timeout timeout-chunk)
+                                              (let ((ret (let ((*read-eval* nil))
+                                                           (omg-read-from-string (caddr (gethash-lock key wlist))))))
+                                                (format t "RET: ~A~%" ret)
+                                                (remhash key wlist)
+                                                (unintern key)
+                                                (if *current-session*
+                                                    (setf (slot-value *current-session* 'last-active) (get-universal-time)))
+                                                (values ret nil))
+                                              (if (and (or retry (cadddr (gethash-lock key wlist)))
+                                                       (> timeout 0)
+                                                       (equal (ready-state (socket *current-session*)) :open))
+                                                  (multiple-value-call #'get-res :timeout (- timeout timeout-chunk))
+                                                  (values nil t)))))
+                                 (multiple-value-call #'get-res :retry t))
+                               (values nil nil)))
                        (progn
-                         (if (not nowait) (setf (gethash-lock key wlist) (list (current-thread) sem nil nil)))
-                         (send-text sock jscmd)
-                         (unless nowait
-                           (labels ((get-res (&key (timeout 600) retry)
-                                      (if (wait-on-semaphore sem :timeout timeout-chunk)
-                                          (let ((ret (let ((*read-eval* nil))
-                                                       (omg-read-from-string (caddr (gethash-lock key wlist))))))
-                                            (remhash key wlist)
-                                            (unintern key)
-                                            (if *current-session*
-                                                (setf (slot-value *current-session* 'last-active) (get-universal-time)))
-                                            (list ret))
-                                          (when (and (or retry (cadddr (gethash-lock key wlist)))
-                                                     (> timeout 0)
-                                                     (equal (ready-state (socket *current-session*)) :open))
-                                            (get-res :timeout (- timeout timeout-chunk))))))
-                             (get-res :retry t))))
-                       (if (equal sock-state :closed)
-                           (progn
-                             (emit :close sock)
-                             nil))))))
+                         (if (equal sock-state :closed)
+                             (emit :close sock))
+                         (values nil t))))))
       (if *current-session*
-          (let ((r (exec)))
-            (if r
-                (apply #'values (car r))
+          (multiple-value-bind (r timeout) (exec)
+            (if (not timeout)
+                (apply #'values r)
                 (error "Timeout in remote-exec")))
-          (mapcar #'caar
+          (mapcar #'car
                   (remove-if #'null
                     (par-map (lambda (s) (with-session s (exec)))
                              (loop for s being the hash-values of *session-list*
