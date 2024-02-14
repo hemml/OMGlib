@@ -1260,7 +1260,6 @@ if(!OMG.inServiceWorker) {
                                           (if (wait-on-semaphore sem :timeout timeout-chunk)
                                               (let ((ret (let ((*read-eval* nil))
                                                            (omg-read-from-string (caddr (gethash-lock key wlist))))))
-                                                (format t "RET: ~A~%" ret)
                                                 (remhash key wlist)
                                                 (unintern key)
                                                 (if *current-session*
