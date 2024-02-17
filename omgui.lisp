@@ -1358,8 +1358,7 @@
                       (progn ,@code))))
           (,wwait)))))
 
-
-(defmethod-f msg ((ww webworker) data &key transfer (try-count 20))
+(defmethod-f msg ((ww webworker) data &key transfer)
   (when-worker-ready ww
     (if (worker ww)
         (if transfer
@@ -1367,42 +1366,51 @@
             ((jscl::oget (worker ww) "postMessage") (make-js-object :|code| data))))))
 
 (defmethod-f initialize-instance :after ((ww webworker) &rest args)
-  (setf (jscl::oget (worker ww) "onmessage")
-        (lambda (ev)
-          (cond ((equal (jscl::oget ev "data") "BOOT")
-                 ((jscl::oget (worker ww) "postMessage")
-                  (make-js-object
-                    :|code| (format nil "~Aself.OMG.Base='~A' ; OMG.session_id='~A' ; self.postMessage('BOOT DONE');"
-                                    (if (persistent-cache ww)
-                                        "self.OMG.PersistentCache=true ; "
-                                        "")
-                                    (jscl::oget (winref "self") "OMG" "Base")
-                                    (jscl::oget (winref "self") "OMG" "session_id"))
-                    :|cache| (jscl::oget (winref "OMG") "FetchCache"))))
-                ((equal (jscl::oget ev "data") "BOOT DONE")
-                 (setf (slot-value ww 'ready) t)
-                 (setf (jscl::oget (worker ww) "onmessage") (lambda (ev))))
-                (t (error "Invalid init message from worker"))))))
+  (labels ((wait-ww (timeout)
+             (if (and (slot-boundp ww 'worker) (not (ready ww)))
+                 (setf (jscl::oget (worker ww) "onmessage")
+                       (lambda (ev)
+                         (cond ((equal (jscl::oget ev "data") "BOOT")
+                                ((jscl::oget (worker ww) "postMessage")
+                                 (make-js-object
+                                   :|code| (format nil "~Aself.OMG.Base='~A' ; OMG.session_id='~A' ; self.postMessage('BOOT DONE');"
+                                                   (if (persistent-cache ww)
+                                                       "self.OMG.PersistentCache=true ; "
+                                                       "")
+                                                   (jscl::oget (winref "self") "OMG" "Base")
+                                                   (jscl::oget (winref "self") "OMG" "session_id"))
+                                   :|cache| (jscl::oget (winref "OMG") "FetchCache"))))
+                               ((equal (jscl::oget ev "data") "BOOT DONE")
+                                (setf (slot-value ww 'ready) t)
+                                (setf (jscl::oget (worker ww) "onmessage") (lambda (ev))))
+                               (t (error "Invalid init message from worker")))))
+                 (execute-after timeout (lambda () (wait-ww (* 2 timeout)))))))
+    (wait-ww 0.1)))
 
 (defmethod-f initialize-instance :before ((ww service-worker) &key &allow-other-keys)
   ((jscl::oget
      ((jscl::oget (winref "navigator") "serviceWorker" "register") (get-sw-path) (make-js-object :|scope| (get-root-path)))
      "then") (lambda (reg)
                ((jscl::oget reg "update"))
-               (setf (jscl::oget (winref "navigator") "serviceWorker" "oncontrollerchange")
-                     (lambda (ev)
-                       (jslog "Controller changed!")
-                       (setf *current-service-worker* ww)
-                       (setf (slot-value ww 'ready) t)
-                       (setf (slot-value ww 'worker) (jscl::oget (winref "navigator") "serviceWorker" "controller")))))))
+               (labels ((wait-sw (timeout)
+                          (if (jscl::js-null-p (jscl::oget (winref "navigator") "serviceWorker"))
+                              (execute-after timeout (lambda () (wait-sw (* timeout 2))))
+                              (progn
+                                (setf (slot-value ww 'worker) (jscl::oget (winref "navigator") "serviceWorker" "controller"))
+                                (setf (slot-value ww 'ready) t)
+                                (setf *current-service-worker* ww)))))
+                 (setf (jscl::oget (winref "navigator") "serviceWorker" "oncontrollerchange")
+                       (lambda (ev)
+                         (jslog "Controller changed!")
+                         (wait-sw 0.1)))
+                 (wait-sw 0.1)))))
 
 (defmethod-f initialize-instance :before ((ww classic-worker) &rest args)
   (push ww *worker-cache*)
   (setf (slot-value ww 'worker)
         (jscl::make-new (jscl::%js-vref "Worker") (jscl::lisp-to-js ((jscl::oget (winref "OMG") "get_ww_js_url"))))))
-;;        (jscl::make-new (jscl::%js-vref "Worker") (jscl::lisp-to-js (get-ww-path)))))
 
-(defmethod-f kill ((ww webworker) &optional (try-count 20))
+(defmethod-f kill ((ww webworker))
   (if (worker ww) ((jscl::oget (worker ww) "terminate")))
   (setf *worker-cache* (remove-if (lambda (w) (equal w ww)) *worker-cache*)))
 
@@ -1419,10 +1427,10 @@
           (jslog "Service Worker not spawned yet, cannot kill")))
   nil)
 
-(defmacro-f in-service-worker (&rest code)
-  (let ((js (gensym2))
-        (fn (gensym2)))
-    `(let ((,js (jscl::with-compilation-environment (jscl::compile-toplevel '(progn ,@code nil) t t))))
+(def-local-macro-f in-service-worker (&rest code)
+  (let ((js (omg::compile-to-js `(progn ,@code) *package* :recursive t))
+        (fn (gensym)))
+    `(progn
        (if *current-service-worker*
            (msg *current-service-worker* ,js)
            (labels ((,fn ()

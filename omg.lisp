@@ -730,6 +730,24 @@ if(!OMG.inServiceWorker) {
       })
     }
   }
+} else { // Automake packages for Service Worker
+  OMG.InMakePackage=false
+  OMG.MakePackage=(package_name)=>{
+    if(!OMG.InMakePackage) {
+      OMG.InMakePackage=true
+      jscl.evaluateString('(DEFPACKAGE :'+package_name+' (:USE :CL :JSCL))')
+      OMG.InMakePackage=false
+      jscl.packages[package_name].omgPkg=true
+    }
+  }
+
+  OMG.OriginalIntern=jscl.internals.intern
+  jscl.internals.intern=(name, package_name)=>{
+    if(package_name && !(package_name in jscl.packages)) {
+      OMG.MakePackage(package_name)
+    }
+    return OMG.OriginalIntern(name, package_name)
+  }
 }
 })()
 "))
@@ -1044,13 +1062,27 @@ if(!OMG.inServiceWorker) {
   (let ((*in-omg-writer* t)
         (*print-circle* t))
     (with-output-to-string (s)
-      (map nil (lambda (f) (write f :stream s)) forms))))
+      (map nil (lambda (f) (write f :stream s)) (copy-tree forms))))) ;; copy-tree to avoid SBCL or SLIME bug with (*print-circle* t)
 
-(defun compile-to-js (code pkg)
+(defun compile-to-js (code pkg &key recursive)
   "Return JS for the code, pkg is current package for compilation context."
   (let* ((*package* pkg)
+         (c0 (if recursive
+                 (let ((seen (make-hash-table)))
+                   (labels ((get-rec (cod)
+                              (cond ((symbolp cod)
+                                     (if (not (gethash cod seen))
+                                         (let ((e (gethash-lock cod *exportable-expressions*)))
+                                           (when e
+                                             (setf (gethash cod seen) t)
+                                             (cons e (get-rec e))))))
+                                    ((listp cod)
+                                     (mapcan #'get-rec cod))
+                                    (t nil))))
+                     (get-rec code)))))
          (c1 (omg-write-to-string `(let ((*package* (find-package ,(package-name pkg)))
                                          (*print-circle* t))
+                                     ,@c0
                                      ,code)))
          (code (if *local-compile*
                    (jscl::with-compilation-environment
@@ -1413,7 +1445,7 @@ self.addEventListener('activate', (e)=>{
 })
 
 self.addEventListener('message', (currentEvent)=>{
- jscl.internals.globalEval(currentEvent.data)
+ jscl.internals.globalEval(currentEvent.data.code)
 })
 
 OMG.fetchHandler=(ev)=>{return}
@@ -1421,7 +1453,6 @@ OMG.fetchHandler=(ev)=>{return}
 self.addEventListener('fetch', function(e) {
   OMG.fetchHandler(e)
 })
-
 "))
 
 (defun get-worker-js ()

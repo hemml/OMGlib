@@ -675,23 +675,7 @@ Or just execute a code in a service-worker (the service-worker instance will be 
   ((jscl::oget (jscl::%js-vref "self") "console" "log") "Hello!"))
 ```
 
-**NB:** The ServiceWorker is executed in a separate context, so you cannot use any symbols and functions from your main code. Also, the ServiceWorker cannot use syncronous XHR, so it cannot fetch any symbols from backend. So, you must explicitely define all needed functions:
-
-```
-(in-service-worker
-  (defun jslog (&rest args)
-    (apply (jscl::oget (jscl::%js-vref "self") "console" "log") args))
-  (jslog "Hello!")
-```
-
-After the function is defined, you can use it any time. But the browser can reload ServiceWorker in some cases and reset it state, so it is more safe to use code like:
-
-```
-(in-service-worker
-  (labels ((jslog (&rest args)
-             (apply (jscl::oget (jscl::%js-vref "self") "console" "log") args)))
-   (jslog "Hello!")))
-```
+**NB:** The ServiceWorker is executed in a separate context, so you cannot use any symbols and functions from your main code. Also, the ServiceWorker cannot use syncronous XHR, so it cannot fetch any symbols from backend. So, when you executing a code, all needed functions will be compiled locally and sent to the browser during a call. This means, for example, what if you update a function, which is referenced in the code inside `in-service-worker` macro, you have to recompile all functions, where `in-service-worker` macro using this function has a place, or refresh browser page to promote the changes to the service worker code.
 
 You can use ServiceWorker to catch and handle network requests with the following macro:
 
