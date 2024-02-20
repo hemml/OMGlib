@@ -503,9 +503,10 @@
                        (values val ccp p pe2)))))
              (tee (s1 s2) ;; Just transfer all data from s1 to s2, using buffered I/O to speedup
                (let ((buf (make-array `(,+proxy-chunk-size+) :element-type '(unsigned-byte 8))))
-                 (loop for (b nb p) = (multiple-value-list
-                                        (sb-bsd-sockets:socket-receive
-                                          (usocket:socket s1) buf nil :element-type '(unsigned-byte 8)))
+                 (loop for (b nb p) = (ignore-errors
+                                        (multiple-value-list
+                                          (sb-bsd-sockets:socket-receive
+                                            (usocket:socket s1) buf nil :element-type '(unsigned-byte 8))))
                        while (and *proxy-sock* nb (> nb 0))
                        for rs = (ignore-errors (sb-bsd-sockets:socket-send (usocket:socket s2) buf nb))
                        until (not rs)))))
