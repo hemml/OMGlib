@@ -1632,10 +1632,7 @@ self.postMessage('BOOT')
                                   (unintern sid)))))
                         (loop for k being each hash-key of *session-list*
                           when (typep (gethash-lock k *session-list*) 'remote-object) collect k))
-                      (map nil
-                        (lambda (thr)
-                          (delete thr *omg-thread-list*))
-                        (remove-if #'bt:thread-alive-p *omg-thread-list*)))
+                      (setf *omg-thread-list* (remove-if-not #'bt:thread-alive-p *omg-thread-list*)))
                     (sleep 60)))))
             *omg-thread-list*)
       (warn "Server not started!")))
