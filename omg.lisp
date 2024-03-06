@@ -801,8 +801,8 @@ if(!OMG.inServiceWorker) {
       (format s "#<REMOTE-JS-OBJECT ~A ~A>" (if (session obj) (get-id (session obj)) nil) (id obj))))
 
 (defun omg-data-to-compile-form (form)
-  (cond ((listp form)
-         (cons 'list (mapcar #'omg-data-to-compile-form form)))
+  (cond ((consp form)
+         (list 'cons (omg-data-to-compile-form (car form)) (omg-data-to-compile-form (cdr form))))
         ((symbolp form)
          (list 'quote form))
         (t form)))
