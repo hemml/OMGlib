@@ -592,7 +592,7 @@
     :reload nil         ; reload SWANK, even if the SWANK package already exists
     :load-contribs nil)
   (setf *proxy-port* port)
-  (setf swank:*globally-redirect-io* t)
+  (setf swank::*globally-redirect-io* t)
   (setf *swank-comm-style* swank-comm-style)
   (loop for i below 20 ;; Wait for swank shutdown
     while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
