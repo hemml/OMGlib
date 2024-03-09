@@ -190,11 +190,46 @@ But many of useful JS and DOM-manipulating functions are provided by `omgui` pac
   (rm-event-handler "document.body.onmousemove" #'my-callback)
   ```
 
+- `(add-event-listener event fn &key passive once capture)` - just a wrapper around `addEventListener`
+
 - `(make-tab-form tab-definitions)` - return DOM element, a form with multiple tabs. The tab definitions must be in the following form:
 
   ```
   (make-tab-form `(("Tab1 title" . ,tab1-contents-element)
                    ("Tab2 title" . ,tab2-contents-element)))
+  ```
+
+- `(now)` - returns current time is seconds, but with subsecond precision (a float number)
+
+- `(with-self var &rest code)` - an useful local macro, allows to use an element itself inside its events, for example:
+
+  ```
+    (with-self div
+      (create-element "div" :|style.padding| "1em" ;; this DOM element will be stored in div variable
+                            :|style.border| "1px solid red"
+        :append-element (create-element "button" :|innerHTML| "REMOVE ME"
+                          :|onclick| (lambda (ev) (remove-element div))))) ;; remove the div when button clicked
+  ```
+
+- `(with-promise p &key then catch)` - a wrapper around JS Promise interface (a local macro):
+
+   ```
+     (with-promise (funcall (jscl::oget (jscl::lisp-to-js (jscl::%js-vref "DeviceMotionEvent")) "requestPermission"))
+       :then (lambda (res)
+               (format t "OK: ~A" res))
+       :catch (lambda (err)
+               (format t "ERR: ~A" err)))
+     ;; Equivalent to: DeviceMotionEvent.requestPermission().then((res)=>{console.log(res)}).catch((err)=>{console.log(err)})
+   ```
+
+- `(oget-bind vars el keys &rest code)` - a local macro, like `destructuring-bind`, but for js object properties (not setfable):
+
+  ```
+    (oget-bind (ax ay) (ev "accelerationIncludingGravity") ("x" "y")
+      (jslog x y)) ;; print ev.accelerationIncludingGravity.x and ev.accelerationIncludingGravity.y
+
+    (oget-bind (ofs-x ofs-y w h) element ("offsetLeft" "offsetTop" "offsetWidth" "offsetHeight")
+      ...) ;; binds elelent.offsetLeft, element.offsetTop
   ```
 
 ### Creating SVG elements

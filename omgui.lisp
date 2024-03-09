@@ -1,6 +1,7 @@
 (defpackage :omgui
   (:use cl omg jscl bordeaux-threads omgdaemon)
   (:export add-event-handler
+           add-event-listener
            add-style
            add-youtube-player
            append-element
@@ -72,6 +73,8 @@
            make-svg
            make-tab-form
            modal-dialog
+           now
+           oget-bind
            on-element-remove
            page-width
            page-height
@@ -94,6 +97,8 @@
            when-worker-free
            when-worker-ready
            winref
+           with-promise
+           with-self
            set-service-worker-uri-handler
            respond-with
            default-action
@@ -2183,6 +2188,37 @@
            (lambda (,val)
              (if ,val ,true ,false)))))))
 
+(def-local-macro-f with-self (var &rest code)
+  `(let (,var)
+     (setf ,var (progn ,@code))))
+
+(def-local-macro-f oget-bind (vars el keys &rest code)
+  (let* ((o (gensym))
+         (innr `(let (,@(mapcar
+                          (lambda (v k)
+                            `(,v (jscl::oget ,(if (listp el) o el) ,k)))
+                          vars
+                          keys))
+                  ,@code)))
+    (if (listp el)
+        `(let ((,o (jscl::oget ,@el)))
+           ,innr)
+        innr)))
+
+(defun-f now ()
+  (/ (get-internal-real-time) internal-time-units-per-second))
+
+(defun-f add-event-listener (event fn &key passive once capture)
+  (funcall (winref "addEventListener") event fn (make-js-object :|once| once
+                                                                :|passive| passive
+                                                                :|capture| capture)))
+
+(def-local-macro-f with-promise (p &key then catch)
+  (let ((pv (gensym)))
+    `(let* ((,pv ,p)
+            ,@(if then `((,pv ((jscl::oget ,pv "then") ,then))))
+            ,@(if catch `((,pv ((jscl::oget ,pv "catch") ,catch)))))
+       ,pv)))
 
 (eval-when (:compile-toplevel)
   (with-open-file (fd (merge-pathnames (make-pathname :name "default_icon.png")
