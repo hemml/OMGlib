@@ -1362,7 +1362,8 @@ if(!OMG.inServiceWorker) {
   "Return the websocket for the new session. Also, creates the session object."
   (let* ((ws (websocket-driver.server:make-server env))
          (ses (make-instance 'omg-session :socket ws :ws ws))
-         (sid (get-id ses)))
+         (sid (get-id ses))
+         (sock-thread (bt:current-thread)))
     (setf (gethash-lock sid *session-list*) ses)
     (on :open ws
       (lambda ()
@@ -1416,7 +1417,9 @@ if(!OMG.inServiceWorker) {
     (on :close ws
        (lambda (&key code reason)
         (format t "WS closed (~a ~a)~%" code reason)
-        (setf (disconnected-at ses) (get-universal-time))))
+        (setf (disconnected-at ses) (get-universal-time))
+        (setf (session-ws ses) nil)
+        (bt:destroy-thread sock-thread)))
     ws))
 
 (defun get-str-from (s len)
@@ -1599,41 +1602,48 @@ self.postMessage('BOOT')
       (push (bt:make-thread
               (lambda ()
                 (loop do
-                  (let ((tim (get-universal-time)))
-                    (labels ((clwl (h)
-                               (map nil
-                                 (lambda (x)
-                                   (let ((t1 (cdr (assoc :time (gethash-lock x h)))))
-                                     (if (and t1 (> (- tim t1) *wl-timeout*))
-                                         (progn
-                                           (remhash x h)
-                                           (unintern x)))))
-                                 (loop for k being each hash-key of h collect k))))
-                      (map nil #'clwl (list *gimme-wait-list* *takit-wait-list*))
-                      (map nil
-                        (lambda (sid)
-                          (let ((ses (gethash-lock sid *session-list*)))
-                            (if (and (disconnected-at ses)
-                                     (> (- (get-universal-time) (disconnected-at ses))
-                                        *session-timeout*))
-                                (progn
-                                  (maphash (lambda (k v)
-                                             (if (and (car v) (not (equal (current-thread) (car v))) (thread-alive-p (car v)))
-                                                 (destroy-thread (car v)))
-                                             (unintern k))
-                                           (wait-list ses))
-                                  (map nil
-                                       (lambda (id)
-                                         (remhash id *remote-objects*))
-                                       (loop for obj being each hash-value of *remote-objects*
-                                             when (equal (session obj) ses) collect (id obj)))
-                                  (remhash sid *session-list*)
-                                  (remove-all-listeners (session-ws ses))
-                                  (unintern sid)))))
-                        (loop for k being each hash-key of *session-list*
-                          when (typep (gethash-lock k *session-list*) 'remote-object) collect k))
-                      (setf *omg-thread-list* (remove-if-not #'bt:thread-alive-p *omg-thread-list*)))
-                    (sleep 60)))))
+                  (ignore-errors
+                    (let ((tim (get-universal-time)))
+                      (labels ((clwl (h)
+                                 (map nil
+                                   (lambda (x)
+                                     (let ((t1 (cdr (assoc :time (gethash-lock x h)))))
+                                       (if (and t1 (> (- tim t1) *wl-timeout*))
+                                           (progn
+                                             (remhash x h)
+                                             (unintern x)))))
+                                   (loop for k being each hash-key of h collect k))))
+                        (map nil #'clwl (list *gimme-wait-list* *takit-wait-list*))
+                        (map nil
+                          (lambda (sid)
+                            (let* ((ses (gethash-lock sid *session-list*))
+                                   (ws (session-ws ses)))
+                              (when ws
+                                (when (equal (ready-state ws) :closed)
+                                  (emit :close ws))
+                                (ignore-errors (send-ping ws))
+                                (when (equal (ready-state ws) :closing)
+                                  (ignore-errors (close-connection ws))))
+                              (if (and (disconnected-at ses)
+                                       (> (- (get-universal-time) (disconnected-at ses))
+                                          *session-timeout*))
+                                  (progn
+                                    (maphash (lambda (k v)
+                                               (if (and (car v) (not (equal (current-thread) (car v))) (thread-alive-p (car v)))
+                                                   (destroy-thread (car v)))
+                                               (unintern k))
+                                             (wait-list ses))
+                                    (map nil
+                                         (lambda (id)
+                                           (remhash id *remote-objects*))
+                                         (loop for obj being each hash-value of *remote-objects*
+                                               when (equal (session obj) ses) collect (id obj)))
+                                    (remhash sid *session-list*)
+                                    (remove-all-listeners (session-ws ses))
+                                    (unintern sid)))))
+                          (loop for k being each hash-key of *session-list* collect k))
+                        (setf *omg-thread-list* (remove-if-not #'bt:thread-alive-p *omg-thread-list*)))
+                      (sleep 60))))))
             *omg-thread-list*)
       (warn "Server not started!")))
 
