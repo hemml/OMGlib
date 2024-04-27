@@ -185,7 +185,7 @@
                           ((jscl::oget el "appendChild") txt)
                           (process-cmd-tail el (cdr cod))))
                        (t (progn
-                            (jslog "Invalid cmd:" (car cod))
+                            ((jscl::oget el "appendChild") (car cod))
                             (process-cmd-tail el (cdr cod)))))
                  el)))
     (process-cmd :svg cod)))
