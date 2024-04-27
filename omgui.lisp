@@ -313,6 +313,8 @@
                (map nil #'app-el v))
               ((equal k :add-style)
                (add-style el v))
+              ((equal (symbol-name k) (string-upcase (symbol-name k)))
+               ((jscl::oget el "setAttribute") (symbol-name k) v))
               (t (let* ((path (js-string-split (symbol-name k) #\.))
                         (obj (deep-oget-1 el path))
                         (fld (car (last path))))
