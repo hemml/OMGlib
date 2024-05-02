@@ -2213,10 +2213,13 @@
 (defun-f now ()
   (/ (get-internal-real-time) internal-time-units-per-second))
 
-(defun-f add-event-listener (event fn &key passive once capture)
-  (funcall (winref "addEventListener") event fn (make-js-object :|once| once
-                                                                :|passive| passive
-                                                                :|capture| capture)))
+(defun-f add-event-listener (event fn &key passive once capture element)
+  (let ((options (make-js-object :|once| once
+                                 :|passive| passive
+                                 :|capture| capture)))
+    (if element
+        ((jscl::oget element "addEventListener") event fn options)
+        (funcall (winref "addEventListener") event fn options))))
 
 (def-local-macro-f with-promise (p &key then catch)
   (let ((pv (gensym)))
