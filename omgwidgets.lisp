@@ -697,9 +697,11 @@
     ((jscl::oget ctx "putImageData") idat 0 0)
     `(image :|width| ,(- (xmax p) (xmin p))
             :|height| ,(- (ymax p) (ymin p))
+            :|x| ,(xmin p)
+            :|y| ,(ymin p)
             :|preserveAspectRatio| "none"
             :|style.imageRendering| "pixelated"
-            :|transform| ,(format nil "translate(~A ~A)" (xmin p) (ymin p))
+            ; :|transform| ,(format nil "translate(~A ~A)" (xmin p) (ymin p))
             :|href| ,((jscl::oget canv "toDataURL") "image/bmp"))))
 
 (defgeneric xmin (p))
