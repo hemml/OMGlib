@@ -162,6 +162,7 @@
                          (if (equal symname (string-upcase symname))
                              symdown
                              symname))))
+               ((jscl::oget el "setAttribute") "xmlns" "http://www.w3.org/2000/svg")
                (process-cmd-tail el args)))
            (process-cmd-tail (el cod)
              (if cod
