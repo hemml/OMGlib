@@ -341,6 +341,7 @@
                                        (create-element "td" :|style.height| "2em"
                                                             :|style.padding| 0
                                                             :|style.position| "relative"
+                                                            :|style.height| "max-content"
                                           :append-element (render-widget (make-instance 'graph-scale :graph g :position :top)))
                                      :append-elements (if right-scale (list (create-element "td"))))))
                       :append-element
@@ -348,19 +349,22 @@
                            :append-elements
                              (if ycap
                                  (list (create-element "td" :|style.padding| 0
-                                                            :|style.width| "1em"
-                                         :append-element (create-element "div" :|style.position| "relative"
-                                                                               :|style.transform| "translateY(-50%) rotate(-90deg)"
-                                                                               :append-element ycap))))
+                                                            :|style.width| "fit-content"
+                                                            :|style.writingMode| "vertical-lr"
+                                                            :|style.transform| "rotate(180deg)"
+                                         :append-element (create-element "span" :|style.marginRight| "0.25em"
+                                                                                :append-element ycap))))
                            :append-elements
                              (if left-scale
                                  (list (create-element "td" :|style.padding| 0
-                                                            :|style.width| "3em"
                                                             :|style.position| "relative"
+                                                            :|style.width| "max-content"
                                          :append-element (render-widget (make-instance 'graph-scale :graph g :position :left)))))
                            :append-element
                              (create-element "td" :|style.padding| 0
                                                   :|style.borderSpacing| 0
+                                                  :|style.width| "100%"
+                                                  :|style.height| "100%"
                                :append-element
                                  (create-element "div" :|style.width| "100%"
                                                        :|style.height| "100%"
@@ -372,8 +376,8 @@
                            :append-elements
                              (if right-scale
                                  (list (create-element "td" :|style.padding| 0
-                                                            :|style.width| "3em"
                                                             :|style.position| "relative"
+                                                            :|style.width| "max-content"
                                          :append-element (render-widget (make-instance 'graph-scale :graph g :position :right))))))
                       :append-elements
                         ,(if bottom-scale
@@ -384,6 +388,7 @@
                                        (create-element "td" :|style.height| "2em"
                                                             :|style.padding| 0
                                                             :|style.position| "relative"
+                                                            :|style.height| "max-content"
                                           :append-element (render-widget (make-instance 'graph-scale :graph g :position :bottom)))
                                      :append-elements (if right-scale (list (create-element "td"))))))
                       :append-elements
@@ -427,45 +432,55 @@
                  (ft (if adjust
                          (* delta (jsceil (/ min delta)))
                          min)))
-            (create-element "div" :|style.position| "absolute"
-                                  :|style.top| 0
-                                  :|style.bottom| 0
-                                  :|style.left| 0
-                                  :|style.right| 0
+            (create-element "div" :|style.position| "relative"
+                                  :|style.inset| 0
+                                  :|style.height| "100%"
+                                  :|style.display| "flex"
+                                  :|style.flexFlow| (if horizontal "row" "column")
               :append-elements
-                (loop for x100 from (* 100 ft) to (* 100 max) by (* 100 delta)
-                      for x = (/ x100 100) append
-                  (let* ((x1 (/ (- x min) (- max min))))
-                    (if horizontal
-                        (list (apply #'create-element
-                                `("div" :|style.position| "absolute"
-                                        :|style.width| ,(format nil "~A%" (* 100 x1))
-                                        :|style.borderRight| "1px solid"
-                                        :|style.height| "0.5em"
-                                        :|style.left| 0
-                                        :|style.boxSizing| "border-box"
-                                        ,(if (equal pos :bottom) :|style.top| :|style.bottom|) 0))
-                              (apply #'create-element "div"
-                                `(:|style.position| "absolute"
-                                  :|style.left| ,(format nil "~A%" (* 100 x1))
-                                  :|style.transform| "translateX(-50%)"
-                                  :|innerHTML| ,(format nil "~A" (trnk x delta))
-                                  ,(if (equal pos :top) :|style.bottom| :|style.top|) "0.6em")))
-                        (list (apply #'create-element
-                                `("div" :|style.position| "absolute"
-                                        :|style.height| ,(format nil "~A%" (* 100 x1))
-                                        :|style.borderTop| "1px solid"
-                                        :|style.width| "0.5em"
-                                        :|style.bottom| 0
-                                        :|style.boxSizing| "border-box"
-                                        ,(if (equal pos :right) :|style.left| :|style.right|) 0))
-                              (apply #'create-element
-                                `("div" :|style.position| "absolute"
-                                        :|style.bottom| ,(format nil "~A%" (* 100 x1))
-                                        :|style.transform| "translateY(50%)"
-                                        ,(if (equal pos :right) :|style.left| :|style.right|) "0.6em"
-                                        :|innerHTML| ,(format nil "~A" (trnk x delta)))))))))))))
+                (let* ((ticks (funcall (if horizontal #'identity #'reverse)
+                                       (loop for x100 from (* 100 ft) to (* 100 max) by (* 100 delta)
+                                             for x = (/ x100 100) collect (cons x (if horizontal
+                                                                                      (/ (- x min) (- max min))
+                                                                                      (- 1 (/ (- x min) (- max min))))))))
+                       (tick-pos (mapcar #'cdr ticks))
+                       (tick-val (mapcar #'car ticks)))
+                  (mapcar (lambda (x1 x2 v)
+                            (create-element "div" (if horizontal :|style.width| :|style.height|) (format nil "~A%" (* 100 (- x2 x1)))
+                                                  (if horizontal :|style.height| :|style.width|) "100%"
+                                                  :|style.overflow| "visible"
+                                                  :|style.position| "relative"
+                              :append-element (create-element "div" (if horizontal :|style.width| :|style.height|) "1px"
+                                                                    (if horizontal :|style.height| :|style.width|) "0.5em"
+                                                                    :|style.position| "absolute"
+                                                                    (if horizontal :|style.right| :|style.bottom|) "-0.5px"
+                                                                    :|style.background| "black"
+                                                                    (case pos
+                                                                      (:left :|style.right|)
+                                                                      (:right :|style.left|)
+                                                                      (:top :|style.bottom|)
+                                                                      (:bottom :|style.top|)) 0)
+                              :append-element (create-element "div" :|innerHTML| (format nil "~A" (trnk v delta))
+                                                                    (if horizontal :|style.width| :|style.height|) "max-content"
+                                                                    (if horizontal :|style.left| :|style.top|) "100%"
+                                                                    :|style.translate| (format nil "~A ~A"
+                                                                                         (if horizontal "-50%" "0")
+                                                                                         (if horizontal "0" "-50%"))
+                                                                    :|style.position| "relative"
+                                                                    (case pos
+                                                                      (:left   :|style.paddingRight|)
+                                                                      (:right  :|style.paddingLeft|)
+                                                                      (:top    :|style.paddingBottom|)
+                                                                      (:bottom :|style.paddingTop|)) (if horizontal "0.5em" "0.6em")
+                                                                    :|style.textAlign| (case pos
+                                                                                         (:left "right")
+                                                                                         (:right "left")
+                                                                                         (:top "bottom")
+                                                                                         (:bottom "top")))))
 
+                          (cons 0 tick-pos)
+                          tick-pos
+                          tick-val)))))))
 
 (defmethod-f render-widget ((p plot))
   (setf (slot-value p 'root)
