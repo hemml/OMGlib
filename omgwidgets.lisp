@@ -332,33 +332,35 @@
             `("table" :|style.width| "100%"
                       ,@(if (not (preserve-aspect-ratio g)) (list :|style.height| "100%"))
                       :|style.borderSpacing| 0
+                      :|style.padding| "1em"
                       :append-elements
                         ,(if top-scale
-                             (list (create-element "tr"
+                             (list (create-element "tr" :|style.height| "1px"
                                      :append-elements (if ycap (list (create-element "td")))
-                                     :append-elements (if left-scale (list (create-element "td")))
+                                     :append-elements (if left-scale (list (create-element "td" :|style.height| "inherit"
+                                                                                                :|style.width| "inherit")))
                                      :append-element
-                                       (create-element "td" :|style.height| "2em"
+                                       (create-element "td" :|style.height| "inherit"
+                                                            :|style.width| "inherit"
                                                             :|style.padding| 0
                                                             :|style.position| "relative"
-                                                            :|style.height| "max-content"
+                                                            ; :|style.height| "max-content"
                                           :append-element (render-widget (make-instance 'graph-scale :graph g :position :top)))
                                      :append-elements (if right-scale (list (create-element "td"))))))
                       :append-element
-                        ,(create-element "tr"
+                        ,(create-element "tr" :|style.height| "1px"
                            :append-elements
                              (if ycap
-                                 (list (create-element "td" :|style.padding| 0
-                                                            :|style.width| "fit-content"
-                                                            :|style.writingMode| "vertical-lr"
-                                                            :|style.transform| "rotate(180deg)"
-                                         :append-element (create-element "span" :|style.marginRight| "0.25em"
+                                 (list (create-element "td" :|style.paddingRight| "1em"
+                                                            :|style.height| "inherit"
+                                         :append-element (create-element "span" :|style.writingMode| "sideways-lr"
                                                                                 :append-element ycap))))
                            :append-elements
                              (if left-scale
                                  (list (create-element "td" :|style.padding| 0
                                                             :|style.position| "relative"
-                                                            :|style.width| "max-content"
+                                                            :|style.height| "inherit"
+                                                            :|style.width| "inherit"
                                          :append-element (render-widget (make-instance 'graph-scale :graph g :position :left)))))
                            :append-element
                              (create-element "td" :|style.padding| 0
@@ -377,27 +379,30 @@
                              (if right-scale
                                  (list (create-element "td" :|style.padding| 0
                                                             :|style.position| "relative"
-                                                            :|style.width| "max-content"
+                                                            :|style.height| "inherit"
+                                                            :|style.width| "inherit"
                                          :append-element (render-widget (make-instance 'graph-scale :graph g :position :right))))))
                       :append-elements
                         ,(if bottom-scale
-                             (list (create-element "tr"
+                             (list (create-element "tr" :|style.height| "1px"
                                      :append-elements (if ycap (list (create-element "td")))
                                      :append-elements (if left-scale (list (create-element "td")))
                                      :append-element
-                                       (create-element "td" :|style.height| "2em"
+                                       (create-element "td" :|style.height| "inherit"
+                                                            :|style.width| "inherit"
                                                             :|style.padding| 0
                                                             :|style.position| "relative"
-                                                            :|style.height| "max-content"
+                                                            ; :|style.height| "max-content"
                                           :append-element (render-widget (make-instance 'graph-scale :graph g :position :bottom)))
                                      :append-elements (if right-scale (list (create-element "td"))))))
                       :append-elements
                         ,(if xcap
-                             (list (create-element "tr"
+                             (list (create-element "tr" :|style.height| "1px"
                                      :append-elements (if ycap (list (create-element "td")))
                                      :append-elements (if left-scale (list (create-element "td")))
                                      :append-element (create-element "td" :|align| "center"
-                                                                          :|style.height| "1em"
+                                                                          :|style.height| "inherit"
+                                                                          :|style.width| "inherit"
                                                                           :|style.padding| 0
                                                        :append-element xcap)
                                      :append-elements (if right-scale (list (create-element "td"))))))))))
@@ -433,8 +438,9 @@
                          (* delta (jsceil (/ min delta)))
                          min)))
             (create-element "div" :|style.position| "relative"
-                                  :|style.inset| 0
-                                  :|style.height| "100%"
+                                  ;;:|style.inset| 0
+                                  (if horizontal :|style.width| :|style.height|) "100%"
+                                  ; :|style.background| "green"
                                   :|style.display| "flex"
                                   :|style.flexFlow| (if horizontal "row" "column")
               :append-elements
@@ -463,8 +469,15 @@
                               :append-element (create-element "div" :|innerHTML| (format nil "~A" (trnk v delta))
                                                                     (if horizontal :|style.width| :|style.height|) "max-content"
                                                                     (if horizontal :|style.left| :|style.top|) "100%"
+                                                                    ; (if (and horizontal (< v 0))
+                                                                    ;     "calc(100% - 1em)"
+                                                                    ;     "100%")
                                                                     :|style.translate| (format nil "~A ~A"
-                                                                                         (if horizontal "-50%" "0")
+                                                                                         (if horizontal
+                                                                                             (if (< v 0)
+                                                                                                 "calc(-50% - 0.2em)"
+                                                                                                 "-50%")
+                                                                                             "0")
                                                                                          (if horizontal "0" "-50%"))
                                                                     :|style.position| "relative"
                                                                     (case pos
