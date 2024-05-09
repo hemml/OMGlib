@@ -523,11 +523,13 @@
     (let* ((old-root (root w))
            (new-root (render-widget w))
            (parent (parent-element old-root)))
-      (if (and old-root (jscl::oget old-root "isConnected"))
+      (if (and old-root
+               (jscl::oget old-root "isConnected")
+               (not (eql old-root new-root)))
         (progn
-          (setf (jscl::oget old-root "style" "display") "none")
-          ((jscl::oget parent "insertBefore") new-root old-root)
-          (remove-element old-root))))))
+          (remove-element old-root)
+          ((jscl::oget parent "insertBefore") new-root old-root)))
+      new-root)))
 
 ;;;;;;;;;;;;;; editable-field ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
