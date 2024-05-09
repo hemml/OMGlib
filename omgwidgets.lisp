@@ -353,7 +353,8 @@
                              (if ycap
                                  (list (create-element "td" :|style.paddingRight| "1em"
                                                             :|style.height| "inherit"
-                                         :append-element (create-element "span" :|style.writingMode| "sideways-lr"
+                                         :append-element (create-element "span" :|style.writingMode| "vertical-lr"
+                                                                                :|style.writingMode| "sideways-lr"
                                                                                 :append-element ycap))))
                            :append-elements
                              (if left-scale
