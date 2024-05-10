@@ -527,8 +527,8 @@
                (jscl::oget old-root "isConnected")
                (not (eql old-root new-root)))
         (progn
-          (remove-element old-root)
-          ((jscl::oget parent "insertBefore") new-root old-root)))
+          ((jscl::oget parent "insertBefore") new-root old-root)
+          (remove-element old-root)))
       new-root)))
 
 ;;;;;;;;;;;;;; editable-field ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
