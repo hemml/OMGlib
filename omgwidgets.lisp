@@ -330,7 +330,7 @@
     (setf (slot-value g 'root)
           (apply #'create-element
             `("table" :|style.width| "100%"
-                      ,@(if (not (preserve-aspect-ratio g)) (list :|style.height| "100%"))
+                      :|style.height| ,(if (preserve-aspect-ratio g) "fit-content" "100%")
                       :|style.borderSpacing| 0
                       :|style.padding| "1em"
                       :append-elements
