@@ -729,7 +729,7 @@
     `(image :|width| ,(- (xmax p) (xmin p))
             :|height| ,(- (ymax p) (ymin p))
             :|x| ,(xmin p)
-            :|y| ,(ymin p)
+            :|y| ,(- (+ (ymax g) (ymin g)) (ymax p))
             :|preserveAspectRatio| "none"
             :|style.imageRendering| "pixelated"
             ; :|transform| ,(format nil "translate(~A ~A)" (xmin p) (ymin p))
