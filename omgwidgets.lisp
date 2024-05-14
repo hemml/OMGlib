@@ -457,11 +457,11 @@
                                                   (if horizontal :|style.height| :|style.width|) "100%"
                                                   :|style.overflow| "visible"
                                                   :|style.position| "relative"
-                              :append-element (create-element "div" (if horizontal :|style.width| :|style.height|) "1px"
+                              :append-element (create-element "div" (if horizontal :|style.width| :|style.height|) "0px"
                                                                     (if horizontal :|style.height| :|style.width|) "0.5em"
                                                                     :|style.position| "absolute"
                                                                     (if horizontal :|style.right| :|style.bottom|) "-0.5px"
-                                                                    :|style.background| "black"
+                                                                    (if horizontal :|style.borderRight| :|style.borderBottom|) "1px solid black"
                                                                     (case pos
                                                                       (:left :|style.right|)
                                                                       (:right :|style.left|)
@@ -470,9 +470,6 @@
                               :append-element (create-element "div" :|innerHTML| (format nil "~A" (trnk v delta))
                                                                     (if horizontal :|style.width| :|style.height|) "max-content"
                                                                     (if horizontal :|style.left| :|style.top|) "100%"
-                                                                    ; (if (and horizontal (< v 0))
-                                                                    ;     "calc(100% - 1em)"
-                                                                    ;     "100%")
                                                                     :|style.translate| (format nil "~A ~A"
                                                                                          (if horizontal
                                                                                              (if (< v 0)
