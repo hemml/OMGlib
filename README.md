@@ -856,6 +856,9 @@ If there is not enough room in the buffer supplied to store an object, `store-to
 
 **NB:** store/load functions retains object equality, but only within a single store/load calls. So, you can store a list, containing multiple references to one mop-object, for example, and, after loading, all the references in the returned list will point to the same object. But, if you call `load-from-buffer` again, all references will point to another instance in the returned list.
 
+If you have to store/load huge objects, you may prevent interface freezes by making all the process asynchronous by using `:background`, `progress-cb` abd `final-cb` options of `store-to-buffer` and `load-from-buffer` functions. When you specify `:background t` option, the process will be executed in background with 0.1 sec chunks (you can supply another time chunk value with `:background 0.5` for example), after each chunk finishing the function  provided with `progress-cb` will be called with single argm equal to current load/store position (in bytes). When the process is done, `final-cb` function will be called. The arguments will be an `ArrayBuffer` (for store-to-buffer) or the loaded object (for `load-from-buffer`) and the last position (in bytes).
+
+
 ### indexedDB
 
 There are some useful macros in `omgui` package to work with IndexedDB:

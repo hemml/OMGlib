@@ -1467,11 +1467,15 @@
 
 (defclass-f dont-transfer () ())
 
-(defun-f store-to-buffer (obj buf &key (start 0) respect-transfer)
+(defun-f store-to-buffer (obj buf &key (start 0) respect-transfer background progress-cb final-cb)
   (let ((last-id 100)
         (obj-hash (make-hash-table))
         (len (jscl::oget buf "byteLength"))
-        (lambda-stack nil))
+        (lambda-stack nil)
+        (t0 (now))
+        (dt (if (numberp background)
+                background
+                0.1)))
     (macrolet ((ps (&rest code)
                  `(push (lambda () ,@code) lambda-stack))
                (psp (&rest code)
@@ -1558,112 +1562,148 @@
                                    (store-id-set 4 0 0)))) ;; other lambdas are not serializable, store NIL instead)
                    (t (error (format nil "Don't know, how to serialize ~A" (type-of obj)))))))
         (psp (store-val obj))
-        (loop while lambda-stack do (funcall (car lambda-stack)))
+        (if background
+            (labels ((doit ()
+                       (setf t0 (now))
+                       (loop while (and lambda-stack (< (- (now) t0) dt)) do
+                         (funcall (car lambda-stack)))
+                       (if progress-cb (funcall progress-cb start))
+                       (if lambda-stack
+                           (execute-after 0 #'doit)
+                           (if final-cb (funcall final-cb start)))))
+              (if progress-cb (funcall progress-cb start))
+              (execute-after 0 #'doit))
+            (loop while lambda-stack do (funcall (car lambda-stack))))
         start))))
 
-(defun-f load-from-buffer (buf &key (start 0))
+(defun-f load-from-buffer (buf &key (start 0) background progress-cb final-cb)
   (let ((len (jscl::oget buf "byteLength"))
         (obj-hash (make-hash-table))
-        (lambda-stack (list (lambda (obj) (return-from load-from-buffer (values obj start))))))
-    (loop while (<= start (- len 8)) do
-      (let* ((idb (jscl::make-new (winref "Int32Array") buf start 2))
-             (typ (jscl::oget idb 0))
-             (b2 (jscl::oget idb 1)))
-        (labels ((cur-lam (obj)
-                   (funcall (car lambda-stack) obj))
-                 (eob ()
-                   (error "End of the buffer reached!")
-                   (return-from load-from-buffer (values nil start)))
-                 (sing-val (typ)
-                   (if (> (+ start 4) len) (eob))
-                   (incf start 4)
-                   (cur-lam (jscl::oget (jscl::make-new (winref typ) buf (- start 4) 1) 0))))
-          (macrolet ((ps (&rest code)
-                       `(push (lambda (obj) ,@code) lambda-stack))
-                     (psp (&rest code)
-                       `(ps (pop lambda-stack) ,@code)))
-            (incf start 8)
-            (case typ
-              (0 (sing-val "Int32Array")) ;; integer
-              (1 (sing-val "Float32Array")) ;; real
-              (2 (if (<= (+ start b2) len) ;; string
-                     (multiple-value-bind (x r) (floor b2 4)
-                       (let ((s1 start))
-                         (incf start (+ b2 (if (> r 0) (- 4 r) 0)))
-                         (cur-lam ((jscl::oget (jscl::make-new (winref "TextDecoder")) "decode")
-                                   ((jscl::oget (jscl::make-new (winref "Uint8Array") buf s1 b2) "slice"))))))
-                     (eob)))
-              (3 ;; symbol
-                 (let (pkg)
-                   (psp (cur-lam (intern obj (find-package pkg))))
-                   (psp (setf pkg obj))))
-              (4 ;; cons
-                 (if (= b2 0)
-                     (cur-lam nil) ;; nil
-                     (multiple-value-bind (obj fnd) (gethash b2 obj-hash)
-                       (if fnd
-                           (cur-lam obj)
-                           (let ((cns (cons nil nil)))
-                             (setf (gethash b2 obj-hash) cns)
-                             (psp (setf (cdr cns) obj) (cur-lam cns))
-                             (psp (setf (car cns) obj)))))))
-              (5 ;; array
-                 (multiple-value-bind (obj fnd) (gethash b2 obj-hash)
-                   (if fnd
-                       (cur-lam obj)
-                       (let (arr
-                             len
-                             (cnt 0)
-                             (b22 b2))
-                         (ps (if (< cnt len)
-                                 (setf (aref arr cnt) obj))
-                             (incf cnt)
-                             (when (>= cnt len)
-                               (pop lambda-stack)
-                               (cur-lam arr)))
-                         (psp (setf arr (make-array obj))
-                              (setf len (apply #'* obj))
-                              (setf (gethash b22 obj-hash) arr))))))
-              (6 ;; MOP object
-                 (multiple-value-bind (obj fnd) (gethash b2 obj-hash)
-                   (if fnd
-                       (cur-lam obj)
-                       (let (inst
-                             (b22 b2))
-                         (psp (map nil (lambda (slt) (setf (slot-value inst (car slt)) (cdr slt))) obj)
-                              (cur-lam inst))
-                         (psp (setf inst (allocate-instance (find-class obj)))
-                              (setf (gethash b22 obj-hash) inst))))))
-              (7 ;; main thread lambda
-                 (psp (cur-lam (jscl::js-to-lisp ;; without js-to-lisp it is not working (WHY?!!!)
-                                 (let* ((cur-buf-len (* 1024 1024 128))
-                                        (req-buf (jscl::make-new (winref "SharedArrayBuffer") cur-buf-len)))
-                                   (lambda (&rest args)
-                                     (labels ((stor-all (ofs)
-                                                (let ((siz (store-to-buffer (cons obj args) req-buf :start ofs)))
-                                                  (if (> siz cur-buf-len)
-                                                      (progn
-                                                        (setf cur-buf-len (* 2 cur-buf-len))
-                                                        (setf req-buf (jscl::make-new (winref "SharedArrayBuffer") cur-buf-len))
-                                                        (stor-all ofs)))))
-                                              (try-fetch (rc)
-                                                (let ((ibuf (jscl::make-new (winref "Int32Array") req-buf 0 2)))
-                                                  (setf (jscl::oget ibuf 0) 0)
-                                                  (setf (jscl::oget ibuf 1) rc)
-                                                  (funcall (winref "postMessage") req-buf)
-                                                  ((jscl::oget (jscl::%js-vref "Atomics") "wait") ibuf 0 0)
-                                                  (let ((res-len (jscl::oget ibuf 0)))
-                                                    (if (> res-len 0)
-                                                        (if (> res-len (jscl::oget req-buf "byteLength"))
-                                                            (progn
-                                                              (setf cur-buf-len res-len)
-                                                              (setf req-buf (jscl::make-new (winref "SharedArrayBuffer") cur-buf-len))
-                                                              (store-to-buffer sym req-buf :start 8)
-                                                              (try-fetch 3))
-                                                            (return-from try-fetch (load-from-buffer req-buf :start 4))))))))
-                                       (stor-all 8)
-                                       (apply #'values (try-fetch 2))))))))))))))
-    (error "End of the buffer!")
+        (exit-flg nil)
+        (lambda-stack (list (if background
+                                (lambda (obj)
+                                  (if progress-cb (funcall progress-cb start))
+                                  (if final-cb (funcall final-cb obj start))
+                                  (setf exit-flg t))
+                                (lambda (obj)
+                                  (return-from load-from-buffer (values obj start))))))
+        (dt (if (numberp background)
+                background
+                0.1)))
+    (labels ((ld ()
+               (let ((t0 (now)))
+                 (loop while (and (<= start (- len 8))
+                                  (or (not background)
+                                      (< (- (now) t0) dt))) do
+                   (let* ((idb (jscl::make-new (winref "Int32Array") buf start 2))
+                          (typ (jscl::oget idb 0))
+                          (b2 (jscl::oget idb 1)))
+                     (labels ((cur-lam (obj)
+                                (funcall (car lambda-stack) obj))
+                              (eob ()
+                                (error "End of the buffer reached!")
+                                (return-from load-from-buffer (values nil start)))
+                              (sing-val (typ)
+                                (if (> (+ start 4) len) (eob))
+                                (incf start 4)
+                                (cur-lam (jscl::oget (jscl::make-new (winref typ) buf (- start 4) 1) 0))))
+                       (macrolet ((ps (&rest code)
+                                    `(push (lambda (obj) ,@code) lambda-stack))
+                                  (psp (&rest code)
+                                    `(ps (pop lambda-stack) ,@code)))
+                         (incf start 8)
+                         (case typ
+                           (0 (sing-val "Int32Array")) ;; integer
+                           (1 (sing-val "Float32Array")) ;; real
+                           (2 (if (<= (+ start b2) len) ;; string
+                                  (multiple-value-bind (x r) (floor b2 4)
+                                    (let ((s1 start))
+                                      (incf start (+ b2 (if (> r 0) (- 4 r) 0)))
+                                      (cur-lam ((jscl::oget (jscl::make-new (winref "TextDecoder")) "decode")
+                                                ((jscl::oget (jscl::make-new (winref "Uint8Array") buf s1 b2) "slice"))))))
+                                  (eob)))
+                           (3 ;; symbol
+                              (let (pkg)
+                                (psp (cur-lam (intern obj (find-package pkg))))
+                                (psp (setf pkg obj))))
+                           (4 ;; cons
+                              (if (= b2 0)
+                                  (cur-lam nil) ;; nil
+                                  (multiple-value-bind (obj fnd) (gethash b2 obj-hash)
+                                    (if fnd
+                                        (cur-lam obj)
+                                        (let ((cns (cons nil nil)))
+                                          (setf (gethash b2 obj-hash) cns)
+                                          (psp (setf (cdr cns) obj) (cur-lam cns))
+                                          (psp (setf (car cns) obj)))))))
+                           (5 ;; array
+                              (multiple-value-bind (obj fnd) (gethash b2 obj-hash)
+                                (if fnd
+                                    (cur-lam obj)
+                                    (let (arr
+                                          len
+                                          (cnt 0)
+                                          (b22 b2))
+                                      (ps (if (< cnt len)
+                                              (setf (aref arr cnt) obj))
+                                          (incf cnt)
+                                          (when (>= cnt len)
+                                            (pop lambda-stack)
+                                            (cur-lam arr)))
+                                      (psp (setf arr (make-array obj))
+                                           (setf len (apply #'* obj))
+                                           (setf (gethash b22 obj-hash) arr))))))
+                           (6 ;; MOP object
+                              (multiple-value-bind (obj fnd) (gethash b2 obj-hash)
+                                (if fnd
+                                    (cur-lam obj)
+                                    (let (inst
+                                          (b22 b2))
+                                      (psp (map nil (lambda (slt) (setf (slot-value inst (car slt)) (cdr slt))) obj)
+                                           (cur-lam inst))
+                                      (psp (setf inst (allocate-instance (find-class obj)))
+                                           (setf (gethash b22 obj-hash) inst))))))
+                           (7 ;; main thread lambda
+                              (psp (cur-lam (jscl::js-to-lisp ;; without js-to-lisp it is not working (WHY?!!!)
+                                              (let* ((cur-buf-len (* 1024 1024 128))
+                                                     (req-buf (jscl::make-new (winref "SharedArrayBuffer") cur-buf-len)))
+                                                (lambda (&rest args)
+                                                  (labels ((stor-all (ofs)
+                                                             (let ((siz (store-to-buffer (cons obj args) req-buf :start ofs)))
+                                                               (if (> siz cur-buf-len)
+                                                                   (progn
+                                                                     (setf cur-buf-len (* 2 cur-buf-len))
+                                                                     (setf req-buf (jscl::make-new (winref "SharedArrayBuffer") cur-buf-len))
+                                                                     (stor-all ofs)))))
+                                                           (try-fetch (rc)
+                                                             (let ((ibuf (jscl::make-new (winref "Int32Array") req-buf 0 2)))
+                                                               (setf (jscl::oget ibuf 0) 0)
+                                                               (setf (jscl::oget ibuf 1) rc)
+                                                               (funcall (winref "postMessage") req-buf)
+                                                               ((jscl::oget (jscl::%js-vref "Atomics") "wait") ibuf 0 0)
+                                                               (let ((res-len (jscl::oget ibuf 0)))
+                                                                 (if (> res-len 0)
+                                                                     (if (> res-len (jscl::oget req-buf "byteLength"))
+                                                                         (progn
+                                                                           (setf cur-buf-len res-len)
+                                                                           (setf req-buf (jscl::make-new (winref "SharedArrayBuffer") cur-buf-len))
+                                                                           (store-to-buffer sym req-buf :start 8)
+                                                                           (try-fetch 3))
+                                                                         (return-from try-fetch (load-from-buffer req-buf :start 4))))))))
+                                                    (stor-all 8)
+                                                    (apply #'values (try-fetch 2))))))))))))))))
+             (lp ()
+               (when (not exit-flg)
+                 (ld)
+                 (if progress-cb (funcall progress-cb start))
+                 (execute-after 0 #'lp))))
+      (if background
+          (progn
+            (if progress-cb (funcall progress-cb start))
+            (lp))
+          (progn
+            (ld)
+            (error "End of the buffer!"))))
     (values nil nil)))
 
 (defun-f get-free-worker ()
