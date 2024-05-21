@@ -877,11 +877,12 @@ There are some useful macros in `omgui` package to work with IndexedDB:
              (jslog "The data is saved!")))))))))))
   :when-err (lambda ()
              (jslog "The data is not saved!")))))))))))
+  :raw nil ;; If t, the load-from-buffer will not be called and object will be returned as is
 ```
 
 `indexed-db-get` - get a value for a key:
 ```
-(indexed-db-get (val ("MyDatabase" "table1" key))
+(indexed-db-get (val ("MyDatabase" "table1" key raw)) ;; if raw is t, the store-to-buffer will not be called before object saving
   (jslog "Value loaded:" val)) ;; will be called asynchronously, when data is retrieved.
 ```
 

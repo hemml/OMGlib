@@ -2067,10 +2067,14 @@
   (loop for name across (store-names (conn s)) when (equal (jscl::js-to-lisp name) (name s)) return t
     finally (setf (slot-value s 'stor) (create s))))
 
-(defmethod-f add ((s idb-object-store) key data &key when-ok when-err put)
-  (let* ((len (omgui::store-to-buffer data (jscl::make-new (winref "SharedArrayBuffer") 1)))
-         (buf (jscl::make-new (winref "ArrayBuffer") len)))
-    (omgui::store-to-buffer data buf)
+(defmethod-f add ((s idb-object-store) key data &key when-ok when-err put raw)
+  (let* ((len (if raw
+                  (jscl::oget data "byteLength")
+                  (omgui::store-to-buffer data (jscl::make-new (winref "SharedArrayBuffer") 1))))
+         (buf (if raw
+                  data
+                  (jscl::make-new (winref "ArrayBuffer") len))))
+    (if (not raw) (omgui::store-to-buffer data buf))
     (let ((req ((jscl::oget (stor s) (if put "put" "add")) buf key)))
       (if when-ok (setf (jscl::oget req "onsuccess") (lambda (ev) (funcall when-ok))))
       (setf (jscl::oget req "onerror")
@@ -2079,12 +2083,15 @@
                    (funcall when-err (jscl::oget req "error" "message"))
                    (error (format nil "IDB add error: ~A" (jscl::oget req "error" "message")))))))))
 
-(defmethod-f get ((s idb-object-store) key cb &optional err)
+(defmethod-f get ((s idb-object-store) key cb &optional err raw)
   (let ((req ((jscl::oget (stor s) "get") key)))
     (setf (jscl::oget req "onsuccess")
           (lambda (ev)
             (let ((res (jscl::oget req "result")))
-              (funcall cb (if res (omgui::load-from-buffer res) nil)))))
+              (funcall cb
+                       (if raw
+                           res
+                           (if res (omgui::load-from-buffer res)))))))
     (setf (jscl::oget req "onerror")
           (lambda (ev)
             (if err
@@ -2166,32 +2173,33 @@
                (let ((,conn (make-instance 'idb-connection :connection (jscl::oget ,req "result"))))
                  ,@code))))))
 
-(defun-f indexed-db-add (db store key val &key when-ok when-err)
+(defun-f indexed-db-add (db store key val &key when-ok when-err raw)
   (with-indexed-db (conn db)
     (let* ((tr (make-instance 'idb-transaction :connection conn :stores store :mode :readwrite))
            (st (make-instance 'idb-object-store :trans tr)))
-      (add st key val :when-ok when-ok :when-err when-err))))
+      (add st key val :when-ok when-ok :when-err when-err :raw raw))))
 
-(defun-f indexed-db-put (db store key val &key when-ok when-err)
+(defun-f indexed-db-put (db store key val &key when-ok when-err raw)
   (with-indexed-db (conn db)
     (let* ((tr (make-instance 'idb-transaction :connection conn :stores store :mode :readwrite))
            (st (make-instance 'idb-object-store :trans tr)))
-      (add st key val :when-ok when-ok :when-err when-err :put t))))
+      (add st key val :when-ok when-ok :when-err when-err :put t :raw raw))))
 
 
-(def-local-macro-f indexed-db-get (val-db-store-key &rest code)
+(def-local-macro-f indexed-db-get (val-db-store-key-raw &rest code)
   (let* ((conn (gensym))
          (tr (gensym))
          (st (gensym))
-         (val (car val-db-store-key))
-         (db-store-key (cadr val-db-store-key))
+         (val (car val-db-store-key-raw))
+         (db-store-key (cadr val-db-store-key-raw))
          (db (car db-store-key))
          (store (cadr db-store-key))
-         (key (caddr db-store-key)))
+         (key (caddr db-store-key))
+         (raw (caddr val-db-store-key-raw)))
     `(with-indexed-db (,conn ,db)
        (let* ((,tr (make-instance 'idb-transaction :connection ,conn :stores ,store :mode :readonly))
               (,st (make-instance 'idb-object-store :trans ,tr)))
-         (get ,st ,key (lambda (,val) ,@code))))))
+         (get ,st ,key (lambda (,val) ,@code) nil ,raw)))))
 
 (def-local-macro-f indexed-db-delete (db-store-key &rest code)
   (let* ((conn (gensym))
