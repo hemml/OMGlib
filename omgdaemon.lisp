@@ -144,13 +144,13 @@
   (ensure-directories-exist path)
   (ignore-errors (kill-server))
   (swank:stop-server 4008)
-  (loop for i below 10 ;; Wait for swank shutdown
-    while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
-    do (progn
-         (format t "Waiting for swank shutdown. Please, close all connections!~%")
-         (sleep 1)))
-  (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
-      (format t "SWANK NOT DEAD!!1111~%"))
+  ; (loop for i below 10 ;; Wait for swank shutdown
+  ;   while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
+  ;   do (progn
+  ;        (format t "Waiting for swank shutdown. Please, close all connections!~%")
+  ;        (sleep 1)))
+  ; (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
+  ;     (format t "SWANK NOT DEAD!!1111~%"))
   (let* ((ostream (make-string-output-stream :element-type 'extended-char))
          (istream (make-string-input-stream ""))
          (*standard-output* ostream)
