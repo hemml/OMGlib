@@ -34,8 +34,6 @@
 
 (defvar *forks* (make-hash-table :test #'equal)) ;; Hash to store started versions data: I/O streams and fds, pid, etc
 
-(defvar *proxy-sock* nil) ;; Listening proxy socket. Setf to nil to kill proxy and all proxy threads.
-
 (defvar *omg-version* +devel-version+) ;; Current version name (string), default to devel
 (defvar *omg-last-version* +devel-version+) ;; Current version name (string), default to devel
 
@@ -450,11 +448,6 @@
     :name "wait-for-commit")
   nil)
 
-(defun stop-proxy ()
-  (if *proxy-sock*
-      (usocket:socket-close *proxy-sock*))
-  (setf *proxy-sock* nil))
-
 (defmacro buf-append (b1 b2)
   (let ((bl1 (gensym))
         (b1t (gensym))
@@ -507,7 +500,7 @@
                                         (multiple-value-list
                                           (sb-bsd-sockets:socket-receive
                                             (usocket:socket s1) buf nil :element-type '(unsigned-byte 8))))
-                       while (and *proxy-sock* nb (> nb 0))
+                       while (and nb (> nb 0))
                        for rs = (ignore-errors (sb-bsd-sockets:socket-send (usocket:socket s2) buf nb))
                        until (not rs)))))
       (unwind-protect
@@ -560,15 +553,29 @@
         (usocket:socket-close cs)))))
 
 (defun proxy (port) ;; Start a proxy server
-  (let ((psock (usocket:socket-listen "0.0.0.0" port :reuse-address t :element-type '(unsigned-byte 8))))
-    (setf *proxy-sock* psock)
+  (let ((psock (usocket:socket-listen "0.0.0.0" port :reuse-address t :element-type '(unsigned-byte 8)))
+        (npj 0)
+        (max-npj 0)
+        (npj-lock (bt:make-lock))
+        (exit-flg nil))
     (unwind-protect
-      (loop while *proxy-sock* do
-        (let ((s (usocket:socket-accept *proxy-sock*)))
-          (bt:make-thread (lambda () (proxy-job s)) :name "proxy-job")))
-      (progn
-        (usocket:socket-close psock)
-        (setf *proxy-sock* nil)))))
+      (loop while (not exit-flg) do
+        (let ((s (ignore-errors (usocket:socket-accept psock))))
+          (if s
+              (bt:make-thread (lambda ()
+                                (bt:with-lock-held (npj-lock)
+                                  (incf npj)
+                                  (when (> npj max-npj)
+                                    (setf max-npj npj)
+                                    (format t "~&MAX JOBS: ~A~%" npj)))
+                                (proxy-job s)
+                                (bt:with-lock-held (npj-lock)
+                                  (decf npj)))
+                              :name "proxy-job")
+              (progn
+                (format t "~&ACCEPT ERROR!~%")
+                (setf exit-flg t)))))
+      (usocket:socket-close psock))))
 
 (defvar *proxy-port* 80)
 
@@ -584,7 +591,7 @@
     (setf *main-lock* (bt:make-lock))
     (ensure-version-working +devel-version+)
     (sb-debug::disable-debugger)
-    (proxy *proxy-port*)))
+    (loop do (proxy *proxy-port*) do (sleep 1))))
 
 (defun make-omg-daemon (port &key (swank-comm-style :spawn)) ;; Dump daemon image, specify proxy port
   (swank-loader:init
