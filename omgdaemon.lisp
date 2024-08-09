@@ -502,7 +502,9 @@
                                             (usocket:socket s1) buf nil :element-type '(unsigned-byte 8))))
                        while (and nb (> nb 0))
                        for rs = (ignore-errors (sb-bsd-sockets:socket-send (usocket:socket s2) buf nb))
-                       until (not rs)))))
+                       until (not rs))
+                 (ignore-errors (usocket:socket-close s1))
+                 (ignore-errors (usocket:socket-close s2)))))
       (unwind-protect
         (multiple-value-bind (vers sb sv) ;; Process input, before version cookie will be found, or before end of headers reached
                              (loop for s = (read-lin cs c-rd-buf)
@@ -547,9 +549,9 @@
                       (sb-bsd-sockets:socket-send (usocket:socket cs) s-rd-buf nil))) ;; Send data remaining in line buffer
                 (tee ss cs)) ;; Connect server to client
               (progn
+                (if tee-thr (bt:join-thread tee-thr))
                 (ignore-errors (usocket:socket-close ss))
-                (ignore-errors (usocket:socket-close cs))
-                (if tee-thr (ignore-errors (bt:destroy-thread tee-thr)))))))
+                (ignore-errors (usocket:socket-close cs))))))
         (usocket:socket-close cs)))))
 
 (defun proxy (port) ;; Start a proxy server
