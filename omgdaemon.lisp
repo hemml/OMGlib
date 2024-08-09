@@ -549,7 +549,7 @@
                       (sb-bsd-sockets:socket-send (usocket:socket cs) s-rd-buf nil))) ;; Send data remaining in line buffer
                 (tee ss cs)) ;; Connect server to client
               (progn
-                (if tee-thr (bt:join-thread tee-thr))
+                (if tee-thr (ignore-errors (bt:destroy-thread tee-thr)))
                 (ignore-errors (usocket:socket-close ss))
                 (ignore-errors (usocket:socket-close cs))))))
         (usocket:socket-close cs)))))
