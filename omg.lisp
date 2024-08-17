@@ -514,8 +514,8 @@ if(!OMG.inServiceWorker) {
                ' '+full_name)
       if (xhr.status === 200) {
         //console.log(xhr.response)
-        OMG.FetchCache[full_name]=xhr.response
         eval_fn(xhr.response)
+        OMG.FetchCache[full_name]=xhr.response
         OMG.InFetch[full_name]=false
       } else {
         OMG.InFetch[full_name]=false
