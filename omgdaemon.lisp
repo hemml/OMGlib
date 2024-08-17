@@ -383,7 +383,7 @@
                                (error (format nil "Cannot spawn version [~A]" version))))
                          (if (not (version-alive-p version))
                              (progn
-                               (bt:destroy-thread dev-thr)
+                               (if dev-thr (bt:destroy-thread dev-thr))
                                (kill-version version))))))))
              (error (format nil "Cannot find image file for version ~A" version))))))
 
@@ -398,7 +398,7 @@
         (format t "Version ~A not responding~%" version)
         (if (and (equal version +devel-version+) *prevent-devel-startup*)
             (loop for i below 60 while *prevent-devel-startup* do (sleep 1)))
-        (restart-version version)
+        (ignore-errors (restart-version version))
         (loop for i below 10
               while (not (version-alive-p version))
               do (sleep 1))
