@@ -1508,9 +1508,9 @@ self.postMessage('BOOT')
                (:content-type "text/javascript; charset=utf-8")
                (,(get-main-js))))
           ((equal uri (concatenate 'string *root-path* *html-path*))
-           `(200 (:content-type "text/html; charset=utf-8")
-                ,@(if *cross-origin* '(:Cross-Origin-Opener-Policy "same-origin"
-                                       :Cross-Origin-Embedder-Policy "require-corp"))
+           `(200 (:content-type "text/html; charset=utf-8"
+                  ,@(if *cross-origin* '(:Cross-Origin-Opener-Policy "same-origin"
+                                         :Cross-Origin-Embedder-Policy "require-corp")))
                  (,(get-root-html))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path*)) ;; will be removed
                 (getf env :content-length))
