@@ -1419,7 +1419,8 @@ if(!OMG.inServiceWorker) {
         (format t "WS closed (~a ~a)~%" code reason)
         (setf (disconnected-at ses) (get-universal-time))
         (setf (session-ws ses) nil)
-        (bt:destroy-thread sock-thread)))
+        (when (and sock-thread (not (equal sock-thread (bt:current-thread)))) 
+          (bt:destroy-thread sock-thread))))
     ws))
 
 (defun get-str-from (s len)
