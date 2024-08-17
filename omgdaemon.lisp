@@ -141,7 +141,6 @@
 (defun makimg (path) ;; save lisp image. FIXME: SBCL only for now
   (ensure-directories-exist path)
   (ignore-errors (kill-server))
-  (swank:stop-server 4008)
   ; (loop for i below 10 ;; Wait for swank shutdown
   ;   while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
   ;   do (progn
@@ -154,16 +153,12 @@
          (*standard-output* ostream)
          (*error-output* ostream)
          (*standard-input* istream))
-    (map nil
-      (lambda (conn)
-        (ignore-errors (close (swank::connection.socket-io conn))))
-      swank::*connections*)
-    (loop for i below 10 ;; Wait for swank shutdown
-      while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
-      do (progn
-           (format t "Waiting for swank shutdown. Please, close all connections!~%")
-           ;;;(swank:stop-server 4008)
-           (sleep 1)))
+    ; (loop for i below 10 ;; Wait for swank shutdown
+    ;   while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
+    ;   do (progn
+    ;        (format t "Waiting for swank shutdown. Please, close all connections!~%")
+    ;        ;;;(swank:stop-server 4008)
+    ;        (sleep 1)))
     (kill-all-threads)
     ;;(sb-ext:gc :full t)
     (sb-ext:save-lisp-and-die path :executable t :save-runtime-options t :purify nil :toplevel #'run-main)))
@@ -184,7 +179,7 @@
           (return-from get-version-info nil)))
     frk))
 
-(defun send-cmd-to (version cmd) ;; Send command to the version (or to proxy if version is NIL) and return result(s)
+(defun send-cmd-to (version cmd &key no-wait) ;; Send command to the version (or to proxy if version is NIL) and return result(s)
   (let ((frk (if version (get-version-info version))))
     (if (or (not version) frk)
         (let ((st-i (if frk (cdr (assoc :in frk)) *main-st-i*))
@@ -195,7 +190,8 @@
             (format st-o "~A~%" (let ((*package* (find-package "KEYWORD")))
                                   (write-to-string cmd)))
             (force-output st-o)
-            (apply #'values (ignore-errors (read st-i)))))
+            (if (not no-wait)
+                (apply #'values (ignore-errors (read st-i))))))
         (error (format nil "Cannot find forked version ~A" version)))))
 
 (defun commit (version) ;; Save image as a version
@@ -203,9 +199,16 @@
       (error "Only development version can be commited!"))
   (let ((tmpv (make-tmp-version version)))
     (send-cmd-to nil `(wait-for-commit-version ,tmpv ,version ,(osicat-posix:getpid)))
-    (send-cmd-to nil `(send-cmd-to ,+devel-version+ '(progn
-                                                       (setf omgdaemon::*omg-version* ,version)
-                                                       (makimg (version-file-path ,tmpv)))))))
+    (send-cmd-to nil `(send-cmd-to ,+devel-version+
+                                   '(progn
+                                      (setf omgdaemon::*omg-version* ,version)
+                                      (makimg (version-file-path ,tmpv)))
+                                   :no-wait t))
+    (swank:stop-server 4008)
+    (map nil
+      (lambda (conn)
+        (ignore-errors (close (swank::connection.socket-io conn))))
+      swank::*connections*)))
 
 (defun commit-devel () ;; Save development version image
   (if (not (equal *omg-version* +devel-version+))
