@@ -533,15 +533,7 @@ if(!OMG.inServiceWorker) {
       //console.log('CACHED1:',full_name)
       eval_fn(OMG.FetchCache[full_name])
     } else {
-      if(OMG.FValueFetchHandler) {
-        const res=OMG.FValueFetchHandler(sym)
-        if(res) {
-          //console.log('CACHED2:',full_name)
-          eval_fn(res)
-        } else OMG.Fetch(sym)
-      } else {
-        OMG.Fetch(sym, eval_fn)
-      }
+      OMG.Fetch(sym, eval_fn)
     }
   }
 
