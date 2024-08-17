@@ -22,6 +22,7 @@
 (defvar *main-st-i* nil) ;; Streams and lock for devel<->daemon communications
 (defvar *main-st-o* nil)
 (defvar *main-lock* nil)
+(defvar *start-lock* nil)
 
 (defvar +app_prefix+ "omg_app_") ;; Prefix for dumped version images
 (defvar +devel-version+ "devel") ;; Name of development version
@@ -33,6 +34,7 @@
 (defvar +version-cookie-prefix+ (concatenate 'string +omg-version-cookie+ "=")) ;; Cookie prefix, just to speed-up cookie extraction process
 
 (defvar *forks* (make-hash-table :test #'equal)) ;; Hash to store started versions data: I/O streams and fds, pid, etc
+(defvar *start-locks* (make-hash-table :test #'equal)) ;; Hash to store locks, preventing multiple starups of a version
 
 (defvar *omg-version* +devel-version+) ;; Current version name (string), default to devel
 (defvar *omg-last-version* +devel-version+) ;; Current version name (string), default to devel
@@ -396,16 +398,18 @@
   (run-version version))
 
 (defun ensure-version-working (version &key no-cmd) ;; If the version not spawned, start it
-  (loop while (not (version-alive-p version :no-cmd no-cmd)) do
-    (ignore-errors
-      (progn
+  (bt:with-lock-held ((bt:with-lock-held (*start-lock*)
+                        (let ((l (gethash version *start-locks*)))
+                          (if l l (setf (gethash version *start-locks*) (bt:make-lock))))))
+    (loop while (not (version-alive-p version :no-cmd no-cmd)) do
+      (ignore-errors
         (format t "Version ~A not responding~%" version)
         (if (and (equal version +devel-version+) *prevent-devel-startup*)
             (loop for i below 60 while *prevent-devel-startup* do (sleep 1)))
         (ignore-errors (restart-version version))
         (loop for i below 10
-              while (not (version-alive-p version))
-              do (sleep 1))
+           while (not (version-alive-p version))
+           do (sleep 1))
         (if (not (version-alive-p version))
             (error (format t "Cannot spawn version ~A" version)))))))
 
@@ -595,6 +599,7 @@
               (makimg devel-path))))
     (bt:start-multiprocessing)
     (setf *main-lock* (bt:make-lock))
+    (setf *start-lock* (bt:make-lock))
     (ensure-version-working +devel-version+)
     (sb-debug::disable-debugger)
     (loop do (proxy *proxy-port*) do (sleep 1))))
