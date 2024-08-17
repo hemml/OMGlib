@@ -61,6 +61,8 @@
 
 (defvar *omg-thread-list* nil)
 
+(defvar *cross-origin* t) ;; Enable (by default) Cross-orign headers
+
 (defun gethash-lock (key hash)
   (apply #'values
         (if *giant-hash-lock*
@@ -1492,23 +1494,23 @@ self.postMessage('BOOT')
            `(200
                (:content-type "text/javascript; charset=utf-8"
                 :cache-control "no-store"
-                :Cross-Origin-Opener-Policy "same-origin"
-                :Cross-Origin-Embedder-Policy "require-corp")
+                ,@(if *cross-origin* '(:Cross-Origin-Opener-Policy "same-origin"
+                                       :Cross-Origin-Embedder-Policy "require-corp")))
                (,(get-service-worker-js))))
           ((equal uri (concatenate 'string *root-path* *web-worker-path*))
            `(200
                (:content-type "text/javascript; charset=utf-8"
-                :Cross-Origin-Opener-Policy "same-origin"
-                :Cross-Origin-Embedder-Policy "require-corp")
+                ,@(if *cross-origin* '(:Cross-Origin-Opener-Policy "same-origin"
+                                       :Cross-Origin-Embedder-Policy "require-corp")))
                (,(get-worker-js))))
           ((equal uri (concatenate 'string *root-path* *js-path*))
            `(200
                (:content-type "text/javascript; charset=utf-8")
                (,(get-main-js))))
           ((equal uri (concatenate 'string *root-path* *html-path*))
-           `(200 (:content-type "text/html; charset=utf-8"
-                  :Cross-Origin-Opener-Policy "same-origin"
-                  :Cross-Origin-Embedder-Policy "require-corp")
+           `(200 (:content-type "text/html; charset=utf-8")
+                ,@(if *cross-origin* '(:Cross-Origin-Opener-Policy "same-origin"
+                                       :Cross-Origin-Embedder-Policy "require-corp"))
                  (,(get-root-html))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path*)) ;; will be removed
                 (getf env :content-length))
