@@ -393,7 +393,8 @@
   (run-version version))
 
 (defun ensure-version-working (version &key no-cmd) ;; If the version not spawned, start it
-  (if (not (version-alive-p version :no-cmd no-cmd))
+  (loop while (not (version-alive-p version :no-cmd no-cmd)) do
+    (ignore-errors
       (progn
         (format t "Version ~A not responding~%" version)
         (if (and (equal version +devel-version+) *prevent-devel-startup*)
@@ -403,7 +404,7 @@
               while (not (version-alive-p version))
               do (sleep 1))
         (if (not (version-alive-p version))
-            (error (format t "Cannot spawn version ~A" version))))))
+            (error (format t "Cannot spawn version ~A" version)))))))
 
 (defun commit-notify (version)
   (declare (ignore version)))
