@@ -401,17 +401,18 @@
   (bt:with-lock-held ((bt:with-lock-held (*start-lock*)
                         (let ((l (gethash version *start-locks*)))
                           (if l l (setf (gethash version *start-locks*) (bt:make-lock))))))
-    (loop while (not (version-alive-p version :no-cmd no-cmd)) do
-      (ignore-errors
-        (format t "Version ~A not responding~%" version)
-        (if (and (equal version +devel-version+) *prevent-devel-startup*)
-            (loop for i below 60 while *prevent-devel-startup* do (sleep 1)))
-        (ignore-errors (restart-version version))
-        (loop for i below 10
-           while (not (version-alive-p version))
-           do (sleep 1))
-        (if (not (version-alive-p version))
-            (error (format t "Cannot spawn version ~A" version)))))))
+    (let ((tim0 (get-universal-time)))
+      (loop while (and (not (version-alive-p version :no-cmd no-cmd))
+                       (< (- (get-universal-time) tim0) 120)) do
+        (ignore-errors
+          (format t "Version ~A not responding~%" version)
+          (if (and (equal version +devel-version+) *prevent-devel-startup*)
+              (loop for i below 60 while *prevent-devel-startup* do (sleep 1)))
+          (ignore-errors (restart-version version))
+          (loop for i below 10
+             while (not (version-alive-p version))
+             do (sleep 1))))
+      (version-alive-p version))))
 
 (defun commit-notify (version)
   (declare (ignore version)))
@@ -425,33 +426,33 @@
               (v-path (version-file-path v))
               (link-ok nil))
           (osicat-posix:waitpid pid)
-          (ensure-version-working tv)
-          (kill-version tv)
-          (if (probe-file v-path) (delete-file v-path))
-          (rename-file tv-path v-path)
-          (if (not (equal v +devel-version+)) ;; For production commit, we also have to replace development version
-              (let ((dev-path (version-file-path +devel-version+)))
-                (unwind-protect
-                  (progn
-                    (rename-file dev-path tv-path)
-                    (osicat-posix:link v-path dev-path)
-                    (setf link-ok t)
-                    (delete-file tv-path)
-                    (map nil
-                      (lambda (vers)
-                        (bt:make-thread
-                          (lambda ()
-                            (format t "Sending cmd to: ~A ~A~%" vers v)
-                            (ignore-errors
-                              (send-cmd-to vers `(ignore-errors
-                                                   (setf omgdaemon::*omg-last-version* ,v)
-                                                   (commit-notify ,v)))
-                              (format t "Cmd to ~A sent!~%" vers))))
-                        (sleep 1))
-                      (bt:with-lock-held (omg::*giant-hash-lock*)
-                        (loop for vers being each hash-key of *forks* when vers collect vers))))
-                  (if (not link-ok)
-                      (rename-file tv-path dev-path))))))
+          (when (ensure-version-working tv)
+            (kill-version tv)
+            (if (probe-file v-path) (delete-file v-path))
+            (rename-file tv-path v-path)
+            (if (not (equal v +devel-version+)) ;; For production commit, we also have to replace development version
+                (let ((dev-path (version-file-path +devel-version+)))
+                  (unwind-protect
+                    (progn
+                      (rename-file dev-path tv-path)
+                      (osicat-posix:link v-path dev-path)
+                      (setf link-ok t)
+                      (delete-file tv-path)
+                      (map nil
+                        (lambda (vers)
+                          (bt:make-thread
+                            (lambda ()
+                              (format t "Sending cmd to: ~A ~A~%" vers v)
+                              (ignore-errors
+                                (send-cmd-to vers `(ignore-errors
+                                                     (setf omgdaemon::*omg-last-version* ,v)
+                                                     (commit-notify ,v)))
+                                (format t "Cmd to ~A sent!~%" vers))))
+                          (sleep 1))
+                        (bt:with-lock-held (omg::*giant-hash-lock*)
+                          (loop for vers being each hash-key of *forks* when vers collect vers))))
+                    (if (not link-ok)
+                        (rename-file tv-path dev-path)))))))
         (setf *prevent-devel-startup* nil)))
     :name "wait-for-commit")
   nil)
@@ -525,8 +526,10 @@
                                                        (trivial-utf-8:string-to-utf-8-bytes
                                                          (format nil "~{~A~}" hdrs))
                                                        (not v)))
-          (ensure-version-working vers :no-cmd t)
-          (let* ((frk (get-version-info vers))
+          (let* ((vers (if (ensure-version-working vers :no-cmd t)
+                           vers
+                           (get-top-version)))
+                 (frk (get-version-info vers))
                  (ss (usocket:socket-connect "127.0.0.1" (cdr (assoc :port frk)) :element-type '(unsigned-byte 8)))
                  (tee-thr nil))
             (unwind-protect
@@ -600,7 +603,7 @@
     (bt:start-multiprocessing)
     (setf *main-lock* (bt:make-lock))
     (setf *start-lock* (bt:make-lock))
-    (ensure-version-working +devel-version+)
+    (loop while (not (ensure-version-working +devel-version+)))
     (sb-debug::disable-debugger)
     (loop do (proxy *proxy-port*) do (sleep 1))))
 
