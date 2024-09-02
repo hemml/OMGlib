@@ -473,7 +473,16 @@
 
 (defun proxy-job (cs) ;; Proxy connection cs to the specific version image. FIXME: SBCL only
   (let* ((c-rd-buf (make-array '(0) :adjustable t :element-type '(unsigned-byte 8)))
-         (s-rd-buf (make-array '(0) :adjustable t :element-type '(unsigned-byte 8))))
+         (s-rd-buf (make-array '(0) :adjustable t :element-type '(unsigned-byte 8)))
+         (last-activity (get-universal-time))
+         (tee-thr nil)
+         (ss nil)
+         (watch-thr (bt:make-thread (lambda ()
+                                      (loop while (< (- (get-universal-time) (setf last-activity (get-universal-time))) 300)
+                                            do (sleep 60))
+                                      (if tee-thr (ignore-errors (bt:destroy-thread tee-thr)))
+                                      (ignore-errors (usocket:socket-close cs))
+                                      (if ss (ignore-errors (usocket:socket-close ss)))))))
     (labels ((read-lin (soc buf) ;; Just more efficient read-line, by using buffered readings. Returns line and unprocessed input in buf
                (let* ((nlp (position +nl-code+ buf))
                       (nb (array-dimension buf 0)))
@@ -488,6 +497,7 @@
                            (bl0 (array-dimension buf 0)))
                        (multiple-value-bind (b nb s) (sb-bsd-sockets:socket-receive (usocket:socket soc) tmp-buf nil :element-type '(unsigned-byte 8))
                          (declare (ignore b s))
+                         (setf last-activity (get-universal-time))
                          (if (and nb (> nb 0))
                              (progn
                                (adjust-array buf (list (+ bl0 nb)))
@@ -511,9 +521,11 @@
                                             (usocket:socket s1) buf nil :element-type '(unsigned-byte 8))))
                        while (and nb (> nb 0))
                        for rs = (ignore-errors (sb-bsd-sockets:socket-send (usocket:socket s2) buf nb))
-                       until (not rs))
+                       until (not rs)
+                       do (setf last-activity (get-universal-time)))
                  (ignore-errors (usocket:socket-close s1))
-                 (ignore-errors (usocket:socket-close s2)))))
+                 (ignore-errors (usocket:socket-close s2))
+                 (ignore-errors (bt:destroy-thread watch-thr)))))
       (unwind-protect
         (multiple-value-bind (vers sb sv) ;; Process input, before version cookie will be found, or before end of headers reached
                              (loop for s = (read-lin cs c-rd-buf)
@@ -529,14 +541,14 @@
           (let* ((vers (if (ensure-version-working vers :no-cmd t)
                            vers
                            (get-top-version)))
-                 (frk (get-version-info vers))
-                 (ss (usocket:socket-connect "127.0.0.1" (cdr (assoc :port frk)) :element-type '(unsigned-byte 8)))
-                 (tee-thr nil))
+                 (frk (get-version-info vers)))
             (unwind-protect
               (progn
+                (setf ss (usocket:socket-connect "127.0.0.1" (cdr (assoc :port frk)) :element-type '(unsigned-byte 8)))
                 (sb-bsd-sockets:socket-send (usocket:socket ss) sb nil) ;; Send all client headers to server
                 (sb-bsd-sockets:socket-send (usocket:socket ss) c-rd-buf nil) ;; Send all data remaining in the buffer
                 (setf tee-thr (bt:make-thread (lambda () (tee cs ss)) :name "tee cs ss")) ;; Connect client to server
+                (setf last-activity (get-universal-time))
                 (if sv ;; If we need to set a new version cookie, read server headers and add/replace apropriate Set-cookie: line
                     (progn
                       (loop for s = (read-lin ss s-rd-buf)
@@ -558,9 +570,11 @@
                                              (not (search +version-cookie-prefix+ s :start2 cp)))))
                                  collect (format nil "~A~C~C" s #\return #\newline) into hdrs)
                       (sb-bsd-sockets:socket-send (usocket:socket cs) s-rd-buf nil))) ;; Send data remaining in line buffer
+                (setf last-activity (get-universal-time))
                 (tee ss cs)) ;; Connect server to client
               (progn
                 (if tee-thr (ignore-errors (bt:destroy-thread tee-thr)))
+                (ignore-errors (bt:destroy-thread watch-thr))
                 (ignore-errors (usocket:socket-close ss))
                 (ignore-errors (usocket:socket-close cs))))))
         (usocket:socket-close cs)))))
