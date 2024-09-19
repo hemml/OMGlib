@@ -1497,7 +1497,8 @@ self.postMessage('BOOT')
                (,(get-worker-js))))
           ((equal uri (concatenate 'string *root-path* *js-path*))
            `(200
-               (:content-type "text/javascript; charset=utf-8")
+               (:content-type "text/javascript; charset=utf-8"
+                :connection "Close")
                (,(get-main-js))))
           ((equal uri (concatenate 'string *root-path* *html-path*))
            `(200 (:content-type "text/html; charset=utf-8"
