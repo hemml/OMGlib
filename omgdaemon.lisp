@@ -1,5 +1,5 @@
 (defpackage :omgdaemon
-  (:use cl omg inferior-shell)
+  (:use cl omg inferior-shell iolib log4cl trivial-dump-core)
   (:export *omg-version* ;; Current version name (string)
            *omg-last-version* ;; Last production version name (string)
            omg-init      ;; Init function, called after version startup.
@@ -10,7 +10,6 @@
            make-omg-daemon ;; Dump daemon image, specify proxy port
            commit-notify ;; The fucntion called on versions when new production version commited
            version-set-sym ;; Set symbol value in server (version) context
-           steal-swank     ;; Redirect all standard/error output and debugger hooks to the current swank session
            +omg-version-cookie+ ;; cookie name
            +devel-version+))    ;; development version name
 
@@ -44,6 +43,13 @@
 
 (defvar *prevent-devel-startup* nil) ;; Setf to T to temporary prevent development version startup, use to avoid race condition while new version commit
 
+(defun disable-debugger ()
+  (setf *debugger-hook*
+        (lambda (c h)
+          (declare (ignore h))
+          (log:error "Error found, while debugger is disabled: ~A" c)
+          (uiop:quit))))
+
 (defun omg-init (port)     ;; Called at version startup
   (setf omg::*port* port)
   (restart-server :address "127.0.0.1"))
@@ -68,14 +74,6 @@
   (push (cons var val) *server-set-list*)
   (bt:signal-semaphore *server-set-sem*))
 
-(defun steal-swank () ;; Redirect all standard/error output and debugger hooks to the current swank session
-  (mapcar
-    (lambda (s)
-      (push (cons s (symbol-value s)) *server-set-list*))
-    '(*standard-output* *error-output* *debugger-hook* sb-ext:*invoke-debugger-hook*))
-  (bt:signal-semaphore *server-set-sem*))
-
-
 (defun run-main () ;; toplevel function, called after image startup. Waiting and executing commands from proxy
   (setf omg::*giant-hash-lock* (bt:make-lock))
   (let* ((args (uiop:command-line-arguments))
@@ -84,6 +82,7 @@
          (st-o (swank/backend:make-fd-stream (parse-integer (cadr args)) :UTF-8))
          (eofv (gensym)))
     (loop for i from 4 to 2048 when (and (not (position i fds)) (osicat-posix:fd-open-p i)) do
+        (log:debug "Closing FD ~A" i)
         (osicat-posix:close i)) ;; For security reasons closing all unneeded file descriptors
     (if (caddr args) ;; For devel version two additional FDs are supplied, to execute commands in proxy process
         (setf *main-st-i* (swank/backend:make-fd-stream (parse-integer (caddr args)) :UTF-8)))
@@ -92,8 +91,7 @@
     (if (cddr args)
         (progn
           (setf *main-lock* (bt:make-lock))
-          (sb-debug::enable-debugger)
-          (setf sb-impl::*descriptor-handlers* nil)
+          (setf *debugger-hook* #'swank:swank-debugger-hook)
           (setf *server-set-sem* (bt:make-semaphore))
           (bt:make-thread ;; process symbol-set requests to set symbol values in the server (version) context
             (lambda ()
@@ -108,7 +106,7 @@
                                  (set (car kv) (cdr kv)))
                                *server-set-list*)
                           (setf *server-set-list* nil)))))))))
-        (sb-debug::disable-debugger))
+        (disable-debugger))
     (loop while (and (open-stream-p st-i) (open-stream-p st-o)) do
       (let* ((cmd (ignore-errors (read st-i nil eofv)))
              (res (if (and cmd (not (equal cmd eofv))) (get-cmd-res cmd))))
@@ -140,30 +138,16 @@
       (if (cdr (bt:all-threads))
           (sleep 1)))))
 
-(defun makimg (path) ;; save lisp image. FIXME: SBCL only for now
+(defun makimg (path) ;; save lisp image
   (ensure-directories-exist path)
   (ignore-errors (kill-server))
-  ; (loop for i below 10 ;; Wait for swank shutdown
-  ;   while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
-  ;   do (progn
-  ;        (format t "Waiting for swank shutdown. Please, close all connections!~%")
-  ;        (sleep 1)))
-  ; (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
-  ;     (format t "SWANK NOT DEAD!!1111~%"))
   (let* ((ostream (make-string-output-stream :element-type 'extended-char))
          (istream (make-string-input-stream ""))
          (*standard-output* ostream)
          (*error-output* ostream)
          (*standard-input* istream))
-    ; (loop for i below 10 ;; Wait for swank shutdown
-    ;   while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
-    ;   do (progn
-    ;        (format t "Waiting for swank shutdown. Please, close all connections!~%")
-    ;        ;;;(swank:stop-server 4008)
-    ;        (sleep 1)))
     (kill-all-threads)
-    ;;(sb-ext:gc :full t)
-    (sb-ext:save-lisp-and-die path :executable t :save-runtime-options t :purify nil :toplevel #'run-main)))
+    (save-executable path #'run-main)))
 
 (defun make-tmp-version (version) ;; construct a temporary version name (used while image dump, just to prevent current image damage)
   (format nil "tmp_~A" version))
@@ -176,19 +160,19 @@
          (pid (if frk (cdr (assoc :pid frk)))))
     (if (and pid (not (ignore-errors (osicat-posix:kill pid 0)))) ;; Check process alive, using signal 0
         (progn
-          (format t "Process ~A of version ~A died~%" pid version)
+          (log:info "Process ~A of version ~A died" pid version)
           (osicat-posix:waitpid pid)
           (return-from get-version-info nil)))
     frk))
 
 (defun send-cmd-to (version cmd &key no-wait) ;; Send command to the version (or to proxy if version is NIL) and return result(s)
+  (log:debug "CMD to ~A: ~A" version cmd)
   (let ((frk (if version (get-version-info version))))
     (if (or (not version) frk)
         (let ((st-i (if frk (cdr (assoc :in frk)) *main-st-i*))
               (st-o (if frk (cdr (assoc :out frk)) *main-st-o*))
               (lock (if frk (cdr (assoc :lock frk)) *main-lock*)))
           (bt:with-lock-held (lock)
-            ;;(format t "CMD TO: ~A ~A~%" version cmd)
             (format st-o "~A~%" (let ((*package* (find-package "KEYWORD")))
                                   (write-to-string cmd)))
             (force-output st-o)
@@ -241,12 +225,10 @@
 (defun kill-version (version) ;; Kill version process
   (let* ((inf (get-version-info version))
          (pid (cdr (assoc :pid inf)))
-         (fds (cdr (assoc :fds inf)))
-         (st-i (cdr (assoc :in inf)))
-         (st-o (cdr (assoc :out inf))))
+         (fds (cdr (assoc :fds inf))))
     (if inf
         (progn
-          (format t "Killing version ~A~%" version)
+          (log:info "Killing version ~A" version)
           (bt:make-thread
             (lambda ()
               (if (and (equal version +devel-version+) *prevent-devel-startup*) ;; Don't try to restart development version while image saved
@@ -254,21 +236,21 @@
               (loop for i below 5 while (ignore-errors (osicat-posix:kill pid 0)) do (sleep 1))
               (if (ignore-errors (osicat-posix:kill pid 0))
                   (progn
-                    (format t "Version ~A not died, sending SIGTERM!~%" version)
+                    (log:info "Version ~A not died, sending SIGTERM!" version)
                     (ignore-errors (osicat-posix:kill pid osicat-posix:sigterm))
                     (loop for i below 5 while (ignore-errors (osicat-posix:kill pid 0)) do (sleep 1))
                     (if (get-version-info version)
                         (progn
-                          (format t "Version ~A not died, sending SIGKILL!~%" version)
+                          (log:info "Version ~A not died, sending SIGKILL!" version)
                           (ignore-errors (osicat-posix:kill pid osicat-posix:sigkill))))))
               (osicat-posix:waitpid pid)
-              (format t "Version ~A killed!~%" version))
+              (log:info "Version ~A killed!" version))
             :name "kill-version")
-          (format t "Trying to quit version ~A...~%" version)
+          (log:info "Trying to quit version ~A..." version)
           (send-cmd-to version '(bt:make-thread (lambda () (sleep 1) (osicat-posix:exit 0))))
           (map nil #'osicat-posix:close fds)
           (remhash version *forks*)
-          (format t "Version ~A unregistered~%" version)))))
+          (log:info "Version ~A unregistered" version)))))
 
 (defun posix-fork () ;; Adopted from https://gitlab.common-lisp.net/qitab/poiu/blob/master/fork.lisp
   #+(and allegro os-unix)
@@ -284,26 +266,6 @@
   #-(and os-unix (or allegro clisp clozure sbcl))
   (error "Fork not implemented, sorry"))
 
-;; Adopded from swank/sbcl.lisp
-(sb-alien:define-alien-routine ("execv" sys-execv) sb-alien:int
-    (program sb-alien:c-string)
-    (argv (* sb-alien:c-string)))
-
-;; Adopded from swank/sbcl.lisp
-(defun execv (program args)
-    "Replace current executable with another one."
-    (let ((a-args (sb-alien:make-alien sb-alien:c-string
-                                       (+ 1 (length args)))))
-      (unwind-protect
-           (progn
-             (loop for index from 0 by 1
-                   and item in (append args '(nil))
-                   do (setf (sb-alien:deref a-args index)
-                            item))
-             (when (minusp
-                    (sys-execv program a-args))
-               (error "execv(3) returned.")))
-        (sb-alien:free-alien a-args))))
 
 (defun version-alive-p (version &key no-cmd) ;; Check if the version up and works. If no-cmd is T, don't try to send test command
   (let* ((frk (get-version-info version))
@@ -321,7 +283,7 @@
 
 (defun run-version (version) ;; Start a version
   (if (get-version-info version)
-      (format t "The version ~A is already alive!~%" version)
+      (log:info "The version ~A is already alive!" version)
       (let* ((path (version-file-path version))
              (is-dev (equal version +devel-version+)))
          (if (and is-dev *prevent-devel-startup*) ;; Don't try to restart development version while image saved
@@ -340,12 +302,17 @@
                     (port (find-port:find-port)))
                (let ((pid (osicat-posix:fork)))  ;; fork-exec, to preserve open FDs
                  (if (= pid 0)
-                     (execv name `(,name
-                                   ,(format nil "~A" (car pip2))
-                                   ,(format nil "~A" (cadr pip1))
-                                   ,@(if is-dev
-                                         `(,(format nil "~A" (car dpip2))
-                                           ,(format nil "~A" (cadr dpip1))))))
+                     (let* ((args `(,name
+                                    ,(format nil "~A" (car pip2))
+                                    ,(format nil "~A" (cadr pip1))
+                                    ,@(if is-dev
+                                          `(,(format nil "~A" (car dpip2))
+                                            ,(format nil "~A" (cadr dpip1))))))
+                            (argc (+ 2 (length args))))
+                       (cffi:with-foreign-object (argv :pointer argc)
+                         (iolib/syscalls:bzero argv (* argc (iolib/syscalls:sizeof :pointer)))
+                         (loop for s in args and i below (length args) do (setf (cffi:mem-aref argv :pointer i) (cffi:foreign-string-alloc s)))
+                         (iolib/syscalls:execv name argv)))
                      (let ((dev-thr (if is-dev  ;; for development version we need to start sawnk server and process incoming commands
                                         (bt:make-thread
                                           (lambda ()
@@ -384,7 +351,7 @@
                            (if is-dev (send-cmd-to version `(setf hunchentoot:*catch-errors-p* nil)))
                            (wait-for-version-startup version)
                            (if (version-alive-p version)
-                               (format t "Version [~A] spawned!~%" version)
+                               (log:info "Version [~A] spawned!" version)
                                (error (format nil "Cannot spawn version [~A]" version))))
                          (if (not (version-alive-p version))
                              (progn
@@ -393,8 +360,8 @@
              (error (format nil "Cannot find image file for version ~A" version))))))
 
 (defun restart-version (version)
-  (format t "Restarting version ~A~%" version)
-  (kill-version version)
+  (log:info "Restarting version ~A" version)
+  (ignore-errors (kill-version version))
   (run-version version))
 
 (defun ensure-version-working (version &key no-cmd) ;; If the version not spawned, start it
@@ -404,14 +371,13 @@
     (let ((tim0 (get-universal-time)))
       (loop while (and (not (version-alive-p version :no-cmd no-cmd))
                        (< (- (get-universal-time) tim0) 120)) do
-        (ignore-errors
-          (format t "Version ~A not responding~%" version)
-          (if (and (equal version +devel-version+) *prevent-devel-startup*)
-              (loop for i below 60 while *prevent-devel-startup* do (sleep 1)))
-          (ignore-errors (restart-version version))
-          (loop for i below 10
-             while (not (version-alive-p version))
-             do (sleep 1))))
+        (log:info "Version ~A not responding" version)
+        (when (and (equal version +devel-version+) *prevent-devel-startup*)
+            (loop for i below 60 while *prevent-devel-startup* do (sleep 1)))
+        (restart-version version)
+        (loop for i below 10
+           while (not (version-alive-p version))
+           do (sleep 1)))
       (version-alive-p version))))
 
 (defun commit-notify (version)
@@ -442,12 +408,12 @@
                         (lambda (vers)
                           (bt:make-thread
                             (lambda ()
-                              (format t "Sending cmd to: ~A ~A~%" vers v)
+                              (log:debug "Sending cmd to: ~A ~A" vers v)
                               (ignore-errors
                                 (send-cmd-to vers `(ignore-errors
                                                      (setf omgdaemon::*omg-last-version* ,v)
                                                      (commit-notify ,v)))
-                                (format t "Cmd to ~A sent!~%" vers))))
+                                (log:debug "Cmd to ~A sent!" vers))))
                           (sleep 1))
                         (bt:with-lock-held (omg::*giant-hash-lock*)
                           (loop for vers being each hash-key of *forks* when vers collect vers))))
@@ -471,140 +437,358 @@
 (defun version-available (version) ;; Check if version image exists
   (probe-file (version-file-path version)))
 
-(defun proxy-job (cs) ;; Proxy connection cs to the specific version image. FIXME: SBCL only
-  (let* ((c-rd-buf (make-array '(0) :adjustable t :element-type '(unsigned-byte 8)))
-         (s-rd-buf (make-array '(0) :adjustable t :element-type '(unsigned-byte 8)))
-         (last-activity (get-universal-time))
-         (tee-thr nil)
-         (ss nil)
-         (watch-thr (bt:make-thread (lambda ()
-                                      (loop while (< (- (get-universal-time) (setf last-activity (get-universal-time))) 300)
-                                            do (sleep 60))
-                                      (if tee-thr (ignore-errors (bt:destroy-thread tee-thr)))
-                                      (ignore-errors (usocket:socket-close cs))
-                                      (if ss (ignore-errors (usocket:socket-close ss)))))))
-    (labels ((read-lin (soc buf) ;; Just more efficient read-line, by using buffered readings. Returns line and unprocessed input in buf
-               (let* ((nlp (position +nl-code+ buf))
-                      (nb (array-dimension buf 0)))
-                 (if nlp
-                     (let ((s (if (= 0 nlp)
-                                  ""
-                                  (string-right-trim '(#\Return) (trivial-utf-8:utf-8-bytes-to-string buf :end nlp)))))
-                       (replace buf buf :start2 (+ 1 nlp))
-                       (adjust-array buf (list (- nb nlp 1)))
-                       s)
-                     (let ((tmp-buf (make-array `(,+proxy-chunk-size+) :element-type '(unsigned-byte 8)))
-                           (bl0 (array-dimension buf 0)))
-                       (multiple-value-bind (b nb s) (sb-bsd-sockets:socket-receive (usocket:socket soc) tmp-buf nil :element-type '(unsigned-byte 8))
-                         (declare (ignore b s))
-                         (setf last-activity (get-universal-time))
-                         (if (and nb (> nb 0))
-                             (progn
-                               (adjust-array buf (list (+ bl0 nb)))
-                               (replace buf tmp-buf :start1 bl0)
-                               (read-lin soc buf))))))))
-             (extract-cookie (s) ;; If the line is a Cookie: header, try to extract version cookie value
-               (let* ((cp (position #\: s))
-                      (ccp (string-equal s "cookie" :end1 cp)))
-                 (if (and cp ccp)
-                     (let* ((p (search +version-cookie-prefix+ s :start2 cp))
-                            (ps (if p (+ p (length +version-cookie-prefix+))))
-                            (pe (if p (position #\; s :start ps)))
-                            (pe2 (if pe pe (length s)))
-                            (val (if p (subseq s ps))))
-                       (values val ccp p pe2)))))
-             (tee (s1 s2) ;; Just transfer all data from s1 to s2, using buffered I/O to speedup
-               (let ((buf (make-array `(,+proxy-chunk-size+) :element-type '(unsigned-byte 8))))
-                 (loop for (b nb p) = (ignore-errors
-                                        (multiple-value-list
-                                          (sb-bsd-sockets:socket-receive
-                                            (usocket:socket s1) buf nil :element-type '(unsigned-byte 8))))
-                       while (and nb (> nb 0))
-                       for rs = (ignore-errors (sb-bsd-sockets:socket-send (usocket:socket s2) buf nb))
-                       until (not rs)
-                       do (setf last-activity (get-universal-time)))
-                 (ignore-errors (usocket:socket-close s1))
-                 (ignore-errors (usocket:socket-close s2))
-                 (ignore-errors (bt:destroy-thread watch-thr)))))
-      (unwind-protect
-        (multiple-value-bind (vers sb sv) ;; Process input, before version cookie will be found, or before end of headers reached
-                             (loop for s = (read-lin cs c-rd-buf)
-                                   for v = (if s (extract-cookie s))
-                                   when s collect (format nil "~A~C~C" s #\return #\newline) into hdrs
-                                   when (or (not s) v (= (length s) 0))
-                                        return (values (if (and v (version-available v))
-                                                           v
-                                                           (get-top-version))
-                                                       (trivial-utf-8:string-to-utf-8-bytes
-                                                         (format nil "~{~A~}" hdrs))
-                                                       (not v)))
-          (let* ((vers (if (ensure-version-working vers :no-cmd t)
-                           vers
-                           (get-top-version)))
-                 (frk (get-version-info vers)))
-            (unwind-protect
-              (progn
-                (setf ss (usocket:socket-connect "127.0.0.1" (cdr (assoc :port frk)) :element-type '(unsigned-byte 8)))
-                (sb-bsd-sockets:socket-send (usocket:socket ss) sb nil) ;; Send all client headers to server
-                (sb-bsd-sockets:socket-send (usocket:socket ss) c-rd-buf nil) ;; Send all data remaining in the buffer
-                (setf tee-thr (bt:make-thread (lambda () (tee cs ss)) :name "tee cs ss")) ;; Connect client to server
-                (setf last-activity (get-universal-time))
-                (if sv ;; If we need to set a new version cookie, read server headers and add/replace apropriate Set-cookie: line
-                    (progn
-                      (loop for s = (read-lin ss s-rd-buf)
-                            when (or (not s) (= 0 (length s))) return
-                                 (sb-bsd-sockets:socket-send
-                                    (usocket:socket cs)
-                                    (trivial-utf-8:string-to-utf-8-bytes
-                                      (format nil "~{~A~}"
-                                              `(,@hdrs
-                                                ,@(if sv `(,(format nil "Set-cookie: ~A~A~C~C"
-                                                                    +version-cookie-prefix+
-                                                                    vers
-                                                                    #\return #\newline)))
-                                                ,(format nil "~C~C" #\return #\newline))))
-                                    nil)
-                            when (let ((cp (position #\: s)))
-                                   (not (and cp
-                                             (string-equal s "set-cookie" :end1 cp)
-                                             (not (search +version-cookie-prefix+ s :start2 cp)))))
-                                 collect (format nil "~A~C~C" s #\return #\newline) into hdrs)
-                      (sb-bsd-sockets:socket-send (usocket:socket cs) s-rd-buf nil))) ;; Send data remaining in line buffer
-                (setf last-activity (get-universal-time))
-                (tee ss cs)) ;; Connect server to client
-              (progn
-                (if tee-thr (ignore-errors (bt:destroy-thread tee-thr)))
-                (ignore-errors (bt:destroy-thread watch-thr))
-                (ignore-errors (usocket:socket-close ss))
-                (ignore-errors (usocket:socket-close cs))))))
-        (usocket:socket-close cs)))))
+(defvar *proxy-port* 80)
+
+(defclass ring-buffer ()
+  (buf
+   (buf-size :initform +proxy-chunk-size+
+             :initarg :size)
+   (start :initform 0)
+   (end :initform 0)))
+
+(defmethod initialize-instance :after ((b ring-buffer) &key &allow-other-keys)
+  (with-slots (buf buf-size) b
+    (setf buf (make-array (list buf-size) :element-type '(unsigned-byte 8)))))
+
+(defmethod get-space ((b ring-buffer) &optional size)
+  (with-slots (start end buf buf-size) b
+    (let ((end1 (if (and (= end buf-size)
+                         (> start 0))
+                    0
+                    end)))
+      (if size
+          (values buf end1 (min (+ end1 size) (if (<= start end1) buf-size (1- start))))
+          (values buf end1 (if (<= start end1) buf-size (1- start)))))))
+
+(defmethod allocate-space ((b ring-buffer) size)
+  (with-slots (start end buf buf-size) b
+    (when (< size 0)
+      (error (format nil "Trying to allocate ~A btyes" size)))
+    (let ((end1 (if (and (= end buf-size)
+                         (> start 0))
+                    0
+                    end)))
+      (when (> (+ end1 size) (if (<= start end1) buf-size (1- start)))
+        (error "Buffer overrrun!"))
+      (setf end (+ end1 size))
+      (when (and (= end buf-size) (> start 0))
+        (setf end 0)))))
+
+(defmethod data-available ((b ring-buffer))
+  (with-slots (start end buf buf-size) b
+    (if (<= start end)
+        (values buf start end)
+        (values buf start buf-size))))
+
+(defmethod deallocate-space ((b ring-buffer) size)
+  (with-slots (start end buf buf-size) b
+    (when (< size 0)
+      (error (format nil "Trying to deallocate ~A btyes" size)))
+    (when (> (+ start size) (if (<= start end) end buf-size))
+      (error "Buffer underrun!"))
+    (incf start size)
+    (when (= start buf-size)
+      (setf start 0)
+      (when (= end buf-size)
+        (setf end 0)))))
+
+(defmethod empty-p ((b ring-buffer))
+  (with-slots (start end) b
+    (= start end)))
+
+(defmethod full-p ((b ring-buffer))
+  (with-slots (start end buf-size) b
+    (not (if (<= start end)
+             (or (< end buf-size)
+                 (> start 0))
+             (< end start)))))
+
+; (defmethod extend-buf ((b ring-buffer))
+;   (with-))
+
+(defvar *active-connections* (make-hash-table))
+
+(defclass async-conn ()
+  ((write-buf :initform (make-instance 'ring-buffer))
+   (read-buf :initform (make-instance 'ring-buffer))
+   (base :initarg :base
+         :initform (error "IOLIB base must be specified!"))
+   (conn :initarg :conn)
+   (fin :initform nil)
+   (connected :initform nil)
+   (readed :initform 0)
+   (written :initform 0)
+   (write-registered :initform nil)
+   (conn-id :initform "[unknown ip:port]")))
+
+(defclass selector-conn (async-conn)
+  ((last-pos :initform 0)
+   (cookie-found :initform nil)
+   (cookie-sent-state :initform :waiting-end-of-hdrs)
+   (cur-str-len :initform 0)
+   (version-id)))
+
+(defmacro wait-for (base pred &rest code)
+  (let ((fn (gensym))
+        (dt (gensym)))
+    `(let ((,dt 0.01))
+       (labels ((,fn ()
+                  (if ,pred
+                      (progn ,@code)
+                      (progn
+                        (setf ,dt (min 5.0 (* 1.1 ,dt)))
+                        (add-timer ,base #',fn ,dt :one-shot t)))))
+         (,fn)))))
+
+(defvar *version-spawn-threads* (make-hash-table :test #'equalp))
+
+(defmethod connect-to-version ((c selector-conn) &optional (version (get-top-version)))
+  (with-slots (cookie-found base last-pos version-id) c
+    (log:debug "Connecting to version ~A" version)
+    (setf cookie-found t)
+    (let ((frk (get-version-info version)))
+      (when (and (not frk)
+                 (not (gethash version *version-spawn-threads*)))
+        (setf (gethash version *version-spawn-threads*)
+              (bt:make-thread
+                (lambda ()
+                  (unwind-protect
+                    (loop for i below 5 until (ignore-errors (ensure-version-working version))
+                      when (not (version-alive-p version))
+                      do (let ((v1 (get-top-version)))
+                            (when (not (gethash v1 *version-spawn-threads*)))
+                            (when (not (equal v1 version))
+                              (log:info "Cannot start version ~A, trying with ~A" version v1)
+                              (remhash version *version-spawn-threads*)
+                              (setf version v1)
+                              (if (gethash v1 *version-spawn-threads*)
+                                  (return)
+                                  (setf (gethash v1 *version-spawn-threads*) (bt:current-thread))))))
+                    (remhash version *version-spawn-threads*)))
+                :name (format nil "starting version ~A" version)))))
+    (let ((t0 (get-universal-time)))
+      (wait-for base (or (> (- (get-universal-time) t0) 60)
+                         (get-version-info version))
+        (let ((frk (get-version-info version)))
+          (if frk
+              (let ((vrs (make-socket :connect :active :address-family :internet :type :stream :ipv6 nil)))
+                (connect vrs +ipv4-loopback+ :port (cdr (assoc :port frk)) :wait nil)
+                (wait-for base (socket-connected-p vrs)
+                  (let ((vrs-conn (make-instance 'async-conn :conn vrs :base base)))
+                    (setf version-id version)
+                    (log:debug "Connected to version ~A" version)
+                    (attach c vrs-conn)
+                    (attach vrs-conn c))))
+              (log:debug "Cannot wait more for version ~A" version)))))))
+
+(defmethod push-to ((c selector-conn) buf &key (start 0) (end (array-dimension buf 0)))
+  (with-slots (cookie-sent-state cur-str-len write-buf version-id) c
+    (cond ((eql cookie-sent-state :cookie-sent)
+           (call-next-method))
+          ((eql cookie-sent-state :send-a-cookie)
+           (let* ((cookie-hdr (trivial-utf-8:string-to-utf-8-bytes
+                                 (format nil "Set-cookie: ~A~A~C~C"
+                                   +version-cookie-prefix+
+                                   version-id
+                                   #\return #\newline)))
+                  (cookie-len (array-dimension cookie-hdr 0)))
+              (multiple-value-bind (buf1 start1 end1) (get-space write-buf cookie-len)
+                (when (>= (- end1 start1) cookie-len)
+                  (replace buf1 cookie-hdr :start1 start1 :start2 0 :end1 (+ start1 cookie-len) :end2 cookie-len)
+                  (allocate-space write-buf cookie-len)
+                  (register-write c)
+                  (setf cookie-sent-state :cookie-sent)))
+              (return-from push-to 0)))
+          ((eql cookie-sent-state :waiting-end-of-hdrs)
+           (let ((lpos start))
+             (multiple-value-bind (buf1 start1 end1) (get-space write-buf (- end start))
+               (let ((cw (min (- end start) (- end1 start1))))
+                 (when (> cw 0)
+                   (let ((end (+ start cw)))
+                     (loop for pos = (position +nl-code+ buf :start lpos :end end)
+                       when (and pos (= pos (1+ lpos))) do
+                         (log:debug "End of headers found, injecting a cookie header")
+                         (replace buf1 buf :start1 start1 :start2 start :end1 (+ start1 (- lpos start)) :end2 (+ start (- lpos start)))
+                         (allocate-space write-buf (- lpos start))
+                         (register-write c)
+                         (setf cookie-sent-state :send-a-cookie)
+                         (return-from push-to (- lpos start))
+                       when pos do
+                        (setf lpos (1+ pos))
+                        (setf cur-str-len 0)
+                       when (not pos) do
+                        (incf cur-str-len (- end lpos))
+                        (return-from push-to (call-next-method))))))))))))
+
+(defmethod try-read :after ((c selector-conn))
+  (with-slots (connected last-pos read-buf cookie-found) c
+    (when (and (not connected) (not cookie-found))
+      (if (full-p read-buf)
+          (close-conn c)
+          (multiple-value-bind (buf start end) (data-available read-buf)
+            (declare (ignore start))
+            (loop for pos = (position +nl-code+ buf :start last-pos :end end) while pos do
+              (let* ((s (trivial-utf-8:utf-8-bytes-to-string buf :start last-pos :end (1- pos)))
+                     (cp (position #\: s)))
+                (when (and cp (string-equal s "cookie" :end1 cp))
+                  (let* ((p (search +version-cookie-prefix+ s :start2 cp))
+                         (ps (if p (+ p (length +version-cookie-prefix+))))
+                         (pe (if p (position #\; s :start ps)))
+                         (pe2 (if pe pe (length s)))
+                         (val (if p (subseq s ps pe2))))
+                    (when val
+                      (log:debug "Version cookie found: [~A]" val)
+                      (return (connect-to-version c val)))))
+                (when (= 0 (length s))
+                  (return (connect-to-version c)))
+                (setf last-pos (1+ pos)))))))))
+
+(defmethod attach ((from async-conn) (to async-conn))
+  (with-slots (connected) from
+    (setf connected to)
+    (feed-connected from)))
+
+(defmethod close-conn ((c async-conn) &key close abort)
+  (with-slots (conn base connected written readed conn-id) c
+    (let ((fd (socket-os-fd conn)))
+      (ignore-errors (remove-fd-handlers base fd :read t :write t :error t))
+      (log:debug "Closing connection to ~A (abort: ~A close: ~A) W: ~A R: ~A" conn-id abort close written readed)
+      (if abort
+          (close conn :abort t)
+          (if close
+              (close conn))))
+    (remhash c *active-connections*)))
+
+(defmethod try-write ((c async-conn))
+  (with-slots (conn base fin write-registered write-buf written conn-id) c
+    (handler-case
+      (progn
+        (if (not (empty-p write-buf))
+            (multiple-value-bind (buf start end) (data-available write-buf)
+              (let ((wb (send-to conn buf :start start :end end)))
+                (log:debug "~A Written ~A bytes" conn-id wb)
+                (incf written wb)
+                (deallocate-space write-buf wb)))
+            (progn
+              (ignore-errors (remove-fd-handlers base (socket-os-fd conn) :write t))
+              (setf write-registered nil)))
+        (when (and fin (empty-p write-buf))
+          (log:debug "Finalized connection ~A, closing" conn-id)
+          (close-conn c :close t)))
+      (socket-connection-reset-error ()
+        (log:debug "Client ~A: connection reset by peer" conn-id)
+        (close-conn conn))
+      (isys:ewouldblock ()
+        (log:debug "write-some-bytes: ewouldblock"))
+      (isys:epipe ()
+        (log:debug "Client ~A got hangup on write" conn-id)
+        (close-conn conn)))))
+
+(defmethod fin ((c async-conn) &optional err)
+  (with-slots (fin base conn connected read-buf) c
+    (when (not fin)
+      (when err (log:debug "~A" err))
+      (ignore-errors (remove-fd-handlers base (socket-os-fd conn) :read t))
+      (setf fin t)
+      (try-write c))))
+
+(defmethod register-write ((c async-conn))
+  (with-slots (conn base write-registered) c
+    (when (not write-registered)
+      (when (socket-connected-p conn)
+        (set-io-handler base (socket-os-fd conn) :write (lambda (&rest args) (declare (ignore args)) (try-write c)))
+        (setf write-registered t)))))
+
+(defmethod push-to ((c async-conn) buf &key (start 0) (end (array-dimension buf 0)))
+  (with-slots (write-buf) c
+    (multiple-value-bind (buf1 start1 end1) (get-space write-buf (- end start))
+      (let ((cw (min (- end start) (- end1 start1))))
+        (when (> cw 0)
+          (replace buf1 buf :start1 start1 :start2 start :end1 (+ start1 cw) :end2 (+ start cw))
+          (allocate-space write-buf cw)
+          (register-write c))
+        cw))))
+
+(defmethod feed-connected ((c async-conn))
+  (with-slots (connected read-buf base fin conn) c
+    (when (not (empty-p read-buf))
+      (let ((conn-dt 0.01))7
+        (labels ((schedule-push ()
+                   (setf conn-dt (min 5.0 (* conn-dt 1.1)))
+                   (add-timer base #'try-push conn-dt :one-shot t))
+                 (try-push ()
+                   (when connected
+                     (with-slots (write-buf) connected
+                       (if (empty-p read-buf)
+                           (when fin
+                             (fin connected))
+                           (multiple-value-bind (buf start end) (data-available read-buf)
+                             (when (not (full-p write-buf))
+                               (let ((cw (push-to connected buf :start start :end end)))
+                                 (when (> cw 0)
+                                   (deallocate-space read-buf cw))))
+                             (schedule-push)))))))
+          (try-push))))))
+
+(defmethod try-read ((c async-conn))
+  (with-slots (fin conn base read-buf connected readed conn-id) c
+    (when (and (not fin) (not (full-p read-buf)))
+      (handler-case
+        (multiple-value-bind (buf start end) (get-space read-buf)
+          (when (> end start)
+            (multiple-value-bind (buf rb) (receive-from conn :buffer buf :start start :end end)
+              (declare (ignore buf))
+              (when (= 0 rb)
+                (error 'end-of-file))
+              (log:debug "~A Readed ~A bytes" conn-id rb)
+              (incf readed rb)
+              (allocate-space read-buf rb)
+              (feed-connected c))))
+        (socket-connection-reset-error ()
+          (fin c (format nil "Client ~A: connection reset by peer" conn-id)))
+        (end-of-file ()
+          (fin c (format nil "Client ~A produced end-of-file on a read" conn-id)))))))
+
+(defmethod initialize-instance :after ((c async-conn) &key &allow-other-keys)
+  (when (not (slot-boundp c 'conn))
+    (error "Connection must be specified!"))
+  (with-slots (conn base conn-id) c
+    (set-io-handler base (socket-os-fd conn) :read  (lambda (&rest args) (declare (ignore args)) (try-read c)))
+    (ignore-errors
+      (multiple-value-bind (ip port) (remote-name conn)
+        (setf conn-id (format nil "~A:~A" ip port)))))
+  (setf (omg::gethash-lock c *active-connections*) (get-universal-time)))
 
 (defun proxy (port) ;; Start a proxy server
-  (let ((psock (usocket:socket-listen "0.0.0.0" port :reuse-address t :element-type '(unsigned-byte 8)))
-        (npj 0)
-        (max-npj 0)
-        (npj-lock (bt:make-lock))
-        (exit-flg nil))
+  (let ((ebase (make-instance 'event-base)))
     (unwind-protect
-      (loop while (not exit-flg) do
-        (let ((s (ignore-errors (usocket:socket-accept psock))))
-          (if s
-              (bt:make-thread (lambda ()
-                                (bt:with-lock-held (npj-lock)
-                                  (incf npj)
-                                  (when (> npj max-npj)
-                                    (setf max-npj npj)
-                                    (format t "~&MAX JOBS: ~A~%" npj)))
-                                (proxy-job s)
-                                (bt:with-lock-held (npj-lock)
-                                  (decf npj)))
-                              :name "proxy-job")
-              (progn
-                (format t "~&ACCEPT ERROR!~%")
-                (setf exit-flg t)))))
-      (usocket:socket-close psock))))
-
-(defvar *proxy-port* 80)
+      (handler-case
+        (with-open-socket (srv :connect :passive
+                               :address-family :internet
+                               :type :stream
+                               :ipv6 nil)
+                               ;;:external-format 'unsigned-byte)
+          (log:debug "Created socket: ~A[fd=~A]" srv (socket-os-fd srv))
+          (bind-address srv +ipv4-unspecified+ :port port :reuse-addr t)
+          (log:debug "Bound socket: ~A" srv)
+          (listen-on srv :backlog 5)
+          (log:info "Listening on socket bound to: ~A:~A" (local-host srv) (local-port srv))
+          (set-io-handler ebase (socket-os-fd srv) :read
+            (lambda (fd ev exc)
+              (declare (ignorable ev exc))
+              (let ((conn (accept-connection srv :wait t)))
+                (log:debug "Connection accepted:" conn)
+                (wait-for ebase (socket-connected-p conn)
+                  (with-slots (conn-id) (make-instance 'selector-conn :conn conn :base ebase)
+                    (log:info "Connection from ~A" conn-id))))))
+          (log:info "Entering loop!")
+          (loop do (ignore-errors (event-dispatch ebase)) (sleep 1)))
+        (socket-address-in-use-error ()
+          (log:info "Cannot start omgdaemon serever, address already in use!")))
+      (progn
+        (log:debug "Finalize!")
+        (loop for c being each hash-key of *active-connections* do (close-conn c :abort t))
+        (close ebase)))))
 
 (defun run-daemon () ;; Toplevel function for daemon startup
   (setf omg::*giant-hash-lock* (bt:make-lock))
@@ -618,8 +802,10 @@
     (setf *main-lock* (bt:make-lock))
     (setf *start-lock* (bt:make-lock))
     (loop while (not (ensure-version-working +devel-version+)))
-    (sb-debug::disable-debugger)
-    (loop do (proxy *proxy-port*) do (sleep 1))))
+    (disable-debugger)
+    (loop do (proxy *proxy-port*) do
+      (log:info "Proxy exited, restarting...")
+      (sleep 1))))
 
 (defun make-omg-daemon (port &key (swank-comm-style :spawn)) ;; Dump daemon image, specify proxy port
   (swank-loader:init
@@ -632,20 +818,19 @@
   (loop for i below 20 ;; Wait for swank shutdown
     while (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
     do (progn
-         (format t "Waiting for swank shutdown...~%")
+         (log:info "Waiting for swank shutdown...")
          (sleep 1)))
   (if (position-if (lambda (s) (search "swank" s :test #'char-equal)) (mapcar #'bt:thread-name (bt:all-threads)))
-      (format t "SWANK NOT DEAD!!1111~%"))
+      (log:info "SWANK NOT DEAD!!1111"))
   (kill-all-threads)
-  (sb-ext:gc :full t)
-  (sb-ext:save-lisp-and-die (merge-pathnames (make-pathname :name "omgdaemon"))
-                            :executable t :save-runtime-options t :purify t :toplevel #'run-daemon))
+  (disable-debugger)
+  (save-executable (merge-pathnames (make-pathname :name "omgdaemon")) #'run-daemon))
 
 (defun make-docker-image (&key (tag 'omgdaemon) (sbcl-version "2.4.7"))
   (with-input-from-string
     (fd (format nil "FROM debian
 RUN apt-get update && apt-get dist-upgrade -y
-RUN apt-get install -y sbcl cl-quicklisp git build-essential ziproxy libzstd-dev
+RUN apt-get install -y sbcl cl-quicklisp git build-essential ziproxy libzstd-dev libfixposix-dev
 RUN cd /root && git clone -b sbcl-~A https://git.code.sf.net/p/sbcl/sbcl sbcl-sbcl &&\\
     cd sbcl-sbcl && ./make.sh --fancy --prefix=/usr && ./install.sh && cd / &&\\
     rm -fr /root/sbcl-sbcl
@@ -655,8 +840,7 @@ RUN su -l omg -c 'ziproxy -d ; sbcl --load \"/usr/share/common-lisp/source/quick
 RUN su -l omg -c 'mkdir -p /home/omg/quicklisp/local-projects && cd /home/omg/quicklisp/local-projects &&\\
       git clone --recurse-submodules https://github.com/hemml/OMGlib.git'
 RUN su -l omg -c 'ziproxy -d ; cd /home/omg && sbcl --eval \"(load \\\"/home/omg/quicklisp/setup.lisp\\\")\"\\
-      --eval \"(ql:quickload :hunchentoot)\" --eval \"(ql:quickload :omg)\"\\
-      --eval \"(omgdaemon:make-omg-daemon 8081)\" --non-interactive'
+      --eval \"(ql:quickload :omgdaemon)\" --eval \"(omgdaemon:make-omg-daemon 8081)\" --non-interactive'
 EXPOSE 8081 4008
 CMD ziproxy -d ; while true; do su -l omg -c 'cd /home/omg && ./omgdaemon' ; sleep 1 ; done" sbcl-version))
     (run `(docker build :tag ,tag :pull :no-cache -) :input fd)))

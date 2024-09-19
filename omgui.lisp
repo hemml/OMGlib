@@ -1,5 +1,5 @@
 (defpackage :omgui
-  (:use cl omg jscl bordeaux-threads omgdaemon)
+  (:use cl omg jscl bordeaux-threads)
   (:export add-event-handler
            add-event-listener
            add-style
@@ -27,14 +27,11 @@
            enable-back-button
            enable-scroll
            ensure-element
-           ensure-last-version
            execute-after
            find-widget
            gensym2
            get-dialog-data
            get-element-id
-           get-omg-cookie-name
-           get-my-version
            idb-object-store
            if-idb-key
            in-service-worker
@@ -935,26 +932,6 @@
                      (if (and par (not (jscl::js-null-p par)))
                          (get-wg par)))))))
     (get-wg (jscl::oget ev "target"))))
-
-(defun-r need-reload ()
-  (and (not (equal *omg-version* +devel-version+))
-       (not (equal *omg-version* *omg-last-version*))))
-
-(defun-r get-omg-cookie-name ()
-  +omg-version-cookie+)
-
-(defun-r get-last-version ()
-  *omg-last-version*)
-
-(defun-r get-my-version ()
-  *omg-version*)
-
-(defun-f ensure-last-version ()
-  (if (need-reload)
-      (progn
-        (setf (jscl::oget (jscl::%js-vref "document") "cookie")
-              (format nil "~A=~A" (get-omg-cookie-name) (get-last-version)))
-        ((jscl::oget (jscl::%js-vref "location") "reload") t))))
 
 (def-local-macro-f ensure-element (e &rest body)
   (let ((fn (gensym))

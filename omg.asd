@@ -6,13 +6,12 @@
   :homepage "https://github.com/hemml/OMGlib"
   :source-control "https://github.com/hemml/OMGlib.git"
   :depends-on ("clack" "websocket-driver-server" "bordeaux-threads" "trivial-utf-8" "media-types" "hunchentoot"
-               "pngload" "skippy" "cl-jpeg" "swank" "osicat" "usocket" "uiop" "find-port" "inferior-shell" "cl-parallel")
+               "pngload" "skippy" "cl-jpeg" "cl-parallel")
   :build-operation "static-program-op"
   :components ((:static-file "README.md")
                (:static-file "LICENSE")
                (:file "omg")
-               (:file "omgdaemon" :depends-on ("omg"))
-               (:file "omgui" :depends-on ("omg" "omgdaemon"))
+               (:file "omgui" :depends-on ("omg"))
                (:file "omgutil" :depends-on ("omg"))
                (:file "omgwidgets" :depends-on ("omg" "omgui"))))
 
