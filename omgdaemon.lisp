@@ -343,7 +343,8 @@
                                    (:fds . ,fds)
                                    (:pid . ,pid)
                                    (:port . ,port)
-                                   (:lock . ,(bt:make-lock)))) ;; The lock needed to prevent parallel command processing (because streams are sequental)
+                                   (:lock . ,(bt:make-lock)) ;; The lock needed to prevent parallel command processing (because streams are sequental)
+                                   (:fresh . t)))
                            (send-cmd-to version `(progn
                                                    (setf omgdaemon::*omg-version* ,version) ;; Allow the process to know its version
                                                    (setf omgdaemon::*omg-last-version* ,(get-top-version))
@@ -572,6 +573,9 @@
         (let ((frk (get-version-info version)))
           (if frk
               (let ((vrs (make-socket :connect :active :address-family :internet :type :stream :ipv6 nil)))
+                (when (cdr (assoc :fresh frk))
+                  (sleep 1)
+                  (setf (cdr (assoc :fresh frk)) nil))
                 (connect vrs +ipv4-loopback+ :port (cdr (assoc :port frk)) :wait nil)
                 (wait-for base (socket-connected-p vrs)
                   (let ((vrs-conn (make-instance 'async-conn :conn vrs :base base)))
