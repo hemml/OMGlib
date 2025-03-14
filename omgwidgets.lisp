@@ -71,7 +71,7 @@
   ((elements :accessor elements
      :initform nil)
    (current-position :accessor current-position
-                     :initform 150
+                     :initform 0
                      :mirrored t)
    (transfer-chunk :initform 50
                    :accessor transfer-chunk
