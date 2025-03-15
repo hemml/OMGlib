@@ -847,7 +847,7 @@ if(!OMG.inServiceWorker) {
                                        (lambda (slt)
                                          (getf (cdr slt) :initarg))
                                        all-f-slots)))
-           (has-m-super (notany #'null (mapcar (lambda (cls) (position cls *m-classess*)) superclasses)))
+           (has-m-super (notevery #'null (mapcar (lambda (cls) (position cls *m-classess*)) superclasses)))
            (class-scope (getf options :scope
                           (let ((vrs (remove-duplicates (remove-if #'null (mapcar (lambda (cls)
                                                                                     (gethash-lock cls *m-scopes*))
