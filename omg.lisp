@@ -1089,11 +1089,9 @@ if(!OMG.inServiceWorker) {
                             (jscl::ls-read-from-string c1))
                           t t)))
                    c1))
-         (rcode (if *local-compile*
-                    (replace-all (replace-all (replace-all (replace-all code "\\" "\\\\") (string #\linefeed) "\\n") (string #\return) "\\\\r") "\"" "\\\"")
-                    (replace-all (replace-all code (string #\linefeed) " ") (string #\return) " ")))
+         (rcode (base64:string-to-base64-string code))
          (res (if *local-compile*
-                  (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(\"" rcode "\"))")
+                  (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(atob(\"" rcode "\")))")
                   (concatenate 'string "jscl.evaluateString(" rcode ")"))))
      res))
 
@@ -1416,7 +1414,7 @@ if(!OMG.inServiceWorker) {
         (format t "WS closed (~a ~a)~%" code reason)
         (setf (disconnected-at ses) (get-universal-time))
         (setf (session-ws ses) nil)
-        (when (and sock-thread (not (equal sock-thread (bt:current-thread)))) 
+        (when (and sock-thread (not (equal sock-thread (bt:current-thread))))
           (bt:destroy-thread sock-thread))))
     ws))
 
