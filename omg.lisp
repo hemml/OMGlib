@@ -897,7 +897,10 @@ if(!OMG.inServiceWorker) {
             (setf (slot-value obj 'f-init)
                   (loop for arg in args by #'cddr
                         when (position arg ',f-args)
-                        append (list arg (getf args arg)))))
+                        append (list arg (let ((a (getf args arg)))
+                                           (if (symbolp a)
+                                               `(quote ,a)
+                                               a))))))
           (call-next-method))
 
         (defmethod-f sync-slot ((obj ,name) slot)
