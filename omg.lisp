@@ -576,7 +576,7 @@ if(!OMG.inServiceWorker) {
   OMG.RPC=(cmd)=>{ // will be removed
     let xhr=new XMLHttpRequest()
     xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', false)
-    xhr.send(cmd)
+    xhr.send(btoa(cmd))
     if (xhr.status === 200) {
       return eval(xhr.response)
     } else {
@@ -587,7 +587,7 @@ if(!OMG.inServiceWorker) {
   OMG.RPC2=(cmd)=>{
     let xhr=new XMLHttpRequest()
     xhr.open('POST', OMG.Base+'" *root-path* *rpc-path-m* "', false)
-    xhr.send(cmd)
+    xhr.send(btoa(cmd))
     if (xhr.status === 200) {
       return eval(xhr.response)
     } else {
@@ -610,7 +610,7 @@ if(!OMG.inServiceWorker) {
     xhr.onerror = function (e) {
       throw new Error('Cannot call RPC')
     }
-    xhr.send(cmd)
+    xhr.send(btoa(cmd))
   }
 
   OMG.AsyncRPC2=(cmd, cb)=>{
@@ -628,7 +628,7 @@ if(!OMG.inServiceWorker) {
     xhr.onerror = function (e) {
       throw new Error('Cannot call RPC')
     }
-    xhr.send(cmd)
+    xhr.send(btoa(cmd))
   }
 
 
@@ -1207,9 +1207,9 @@ if(!OMG.inServiceWorker) {
         (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
         (setf (gethash-lock cur-res *gimme-wait-list*)
               `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
-                                                             "xhr.send(OMG.get_session_id()+' '+"
+                                                             "xhr.send(btoa(OMG.get_session_id()+' '+"
                                                                       "\"" (package-name (symbol-package sym)) "\"+"
-                                                                      "' OMG::~A '+(~A));if(xhr.status===200){eval(xhr.response);}else"
+                                                                      "' OMG::~A '+(~A)));if(xhr.status===200){eval(xhr.response);}else"
                                                              "{throw new Error('Cannot fetch symbol (takit fails).');}")
                                         (symbol-name cur-res)
                                         mcod))
@@ -1241,9 +1241,9 @@ if(!OMG.inServiceWorker) {
       (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-tim-sym)))
       (setf (gethash-lock cur-res *gimme-wait-list*)
             `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
-                                                           "xhr.send(OMG.get_session_id()+' '+"
+                                                           "xhr.send(btoa(OMG.get_session_id()+' '+"
                                                                     "jscl.packages.CL.symbols['*PACKAGE*'].value.packageName+"
-                                                                    "' OMG::~A '+(~A));if(xhr.status===200){eval(xhr.response);}else"
+                                                                    "' OMG::~A '+(~A)));if(xhr.status===200){eval(xhr.response);}else"
                                                            "{throw new Error('Cannot fetch symbol (takit fails).');}")
                                       (symbol-name cur-res)
                                       mcod))
@@ -1508,9 +1508,7 @@ self.postMessage('BOOT')
                  (,(get-root-html))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path*)) ;; will be removed
                 (getf env :content-length))
-           (with-input-from-string (s (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
-                                          "\\n"
-                                          (make-string 1 :initial-element #\newline)))
+           (with-input-from-string (s (base64:base64-string-to-string (get-str-from (getf env :raw-body) (getf env :content-length))))
              (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
                     (*current-session* (find-session session-id))
                     (*package* (find-package (omg-read s)))
@@ -1524,9 +1522,7 @@ self.postMessage('BOOT')
                 `(404 (:content-type "text/plain; charset=utf-8") (""))))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path-m*))
                 (getf env :content-length))
-           (with-input-from-string (s (omg::replace-all (get-str-from (getf env :raw-body) (getf env :content-length))
-                                          "\\n"
-                                          (make-string 1 :initial-element #\newline)))
+           (with-input-from-string (s (base64:base64-string-to-string (get-str-from (getf env :raw-body) (getf env :content-length))))
              (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
                     (*current-session* (find-session session-id))
                     (*package* (find-package (omg-read s)))
@@ -1552,7 +1548,7 @@ self.postMessage('BOOT')
                      (gimme sym))))))
           ((and (equal uri (concatenate 'string *root-path* *takit-path*))
                 (getf env :content-length))
-           (let ((str (get-str-from (getf env :raw-body) (getf env :content-length))))
+           (let ((str (base64:base64-string-to-string (get-str-from (getf env :raw-body) (getf env :content-length)))))
              (with-input-from-string (s str)
                (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
                       (*current-session* (find-session session-id))
