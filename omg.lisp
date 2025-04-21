@@ -1,5 +1,5 @@
 (defpackage :omg
-  (:use cl clack websocket-driver bordeaux-threads trivial-utf-8 parallel)
+  (:use cl clack websocket-driver bordeaux-threads trivial-utf-8)
   (:import-from :event-emitter #:emit)
   (:export add-to-boot       ;; add a code to boot sequence
            set-boot          ;; set boot code
@@ -62,6 +62,30 @@
 (defvar *omg-thread-list* nil)
 
 (defvar *cross-origin* t) ;; Enable (by default) Cross-orign headers
+
+(defun par-map (lam &rest maps)
+  (let* ((len (apply #'min (mapcar #'length maps)))
+         (res (make-array `(,len)))
+         (sem (make-array `(,len)))
+         (lock (bt:make-lock))
+         (cnt 0))
+    (apply #'map
+      `(nil
+        ,(lambda (&rest args)
+           (let ((i (1- (incf cnt))))
+             (setf (aref sem i) (bt:make-semaphore))
+             (bt:make-thread
+               (lambda ()
+                 (let ((r (apply lam args)))
+                   (bt:with-lock-held (lock)
+                     (setf (aref res i) r)
+                     (bt:signal-semaphore (aref sem i)))))
+               :initial-bindings `((sem . ,sem) (res . ,res) (i . ,i)))))
+        ,@maps))
+    (loop for i below len collect
+      (progn
+        (bt:wait-on-semaphore (aref sem i))
+        (aref res i)))))
 
 (defun gethash-lock (key hash)
   (apply #'values
