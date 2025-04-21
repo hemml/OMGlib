@@ -381,6 +381,13 @@
 (defun set-root-head (html)
   (setf *extra-head* html))
 
+(defun from-base64 (s)
+  (quri:url-decode (base64:base64-string-to-string s)))
+
+(defun to-base64 (s)
+  (base64:string-to-base64-string (quri:url-encode s)))
+
+
 (defun get-main-js ()
   "Return the JS code, including JSCL and OMG parts glued."
   (concatenate 'string "(()=>{" jscl::*jscl-js*
@@ -399,6 +406,15 @@ OMG.FetchCache={}
 OMG.objectRegistry={}
 
 OMG.ww_js_url=false
+
+OMG.btoa=(s)=>{
+  return btoa(encodeURIComponent(s))
+}
+
+OMG.atob=(s)=>{
+  return decodeURIComponent(atob(s))
+}
+
 
 OMG.get_ww_js_url=()=>{
   if(!OMG.ww_js_url) {
@@ -576,7 +592,7 @@ if(!OMG.inServiceWorker) {
   OMG.RPC=(cmd)=>{ // will be removed
     let xhr=new XMLHttpRequest()
     xhr.open('POST', OMG.Base+'" *root-path* *rpc-path* "', false)
-    xhr.send(btoa(cmd))
+    xhr.send(OMG.btoa(cmd))
     if (xhr.status === 200) {
       return eval(xhr.response)
     } else {
@@ -587,7 +603,7 @@ if(!OMG.inServiceWorker) {
   OMG.RPC2=(cmd)=>{
     let xhr=new XMLHttpRequest()
     xhr.open('POST', OMG.Base+'" *root-path* *rpc-path-m* "', false)
-    xhr.send(btoa(cmd))
+    xhr.send(OMG.btoa(cmd))
     if (xhr.status === 200) {
       return eval(xhr.response)
     } else {
@@ -610,7 +626,7 @@ if(!OMG.inServiceWorker) {
     xhr.onerror = function (e) {
       throw new Error('Cannot call RPC')
     }
-    xhr.send(btoa(cmd))
+    xhr.send(OMG.btoa(cmd))
   }
 
   OMG.AsyncRPC2=(cmd, cb)=>{
@@ -628,7 +644,7 @@ if(!OMG.inServiceWorker) {
     xhr.onerror = function (e) {
       throw new Error('Cannot call RPC')
     }
-    xhr.send(btoa(cmd))
+    xhr.send(OMG.btoa(cmd))
   }
 
 
@@ -1089,9 +1105,9 @@ if(!OMG.inServiceWorker) {
                             (jscl::ls-read-from-string c1))
                           t t)))
                    c1))
-         (rcode (base64:string-to-base64-string code))
+         (rcode (to-base64 code))
          (res (if *local-compile*
-                  (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(atob(\"" rcode "\")))")
+                  (concatenate 'string "jscl.internals.lisp_to_js(jscl.internals.globalEval(OMG.atob(\"" rcode "\")))")
                   (concatenate 'string "jscl.evaluateString(" rcode ")"))))
      res))
 
@@ -1207,7 +1223,7 @@ if(!OMG.inServiceWorker) {
         (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) (:symbol . ,sym)))
         (setf (gethash-lock cur-res *gimme-wait-list*)
               `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
-                                                             "xhr.send(btoa(OMG.get_session_id()+' '+"
+                                                             "xhr.send(OMG.btoa(OMG.get_session_id()+' '+"
                                                                       "\"" (package-name (symbol-package sym)) "\"+"
                                                                       "' OMG::~A '+(~A)));if(xhr.status===200){eval(xhr.response);}else"
                                                              "{throw new Error('Cannot fetch symbol (takit fails).');}")
@@ -1241,7 +1257,7 @@ if(!OMG.inServiceWorker) {
       (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-tim-sym)))
       (setf (gethash-lock cur-res *gimme-wait-list*)
             `((:result . ,(format nil (concatenate 'string "xhr=new XMLHttpRequest();xhr.open('POST','" *root-path* *takit-path* "',false);"
-                                                           "xhr.send(btoa(OMG.get_session_id()+' '+"
+                                                           "xhr.send(OMG.btoa(OMG.get_session_id()+' '+"
                                                                     "jscl.packages.CL.symbols['*PACKAGE*'].value.packageName+"
                                                                     "' OMG::~A '+(~A)));if(xhr.status===200){eval(xhr.response);}else"
                                                            "{throw new Error('Cannot fetch symbol (takit fails).');}")
@@ -1508,7 +1524,7 @@ self.postMessage('BOOT')
                  (,(get-root-html))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path*)) ;; will be removed
                 (getf env :content-length))
-           (with-input-from-string (s (base64:base64-string-to-string (get-str-from (getf env :raw-body) (getf env :content-length))))
+           (with-input-from-string (s (from-base64 (get-str-from (getf env :raw-body) (getf env :content-length))))
              (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
                     (*current-session* (find-session session-id))
                     (*package* (find-package (omg-read s)))
@@ -1522,7 +1538,7 @@ self.postMessage('BOOT')
                 `(404 (:content-type "text/plain; charset=utf-8") (""))))))
           ((and (equal uri (concatenate 'string *root-path* *rpc-path-m*))
                 (getf env :content-length))
-           (with-input-from-string (s (base64:base64-string-to-string (get-str-from (getf env :raw-body) (getf env :content-length))))
+           (with-input-from-string (s (from-base64 (get-str-from (getf env :raw-body) (getf env :content-length))))
              (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
                     (*current-session* (find-session session-id))
                     (*package* (find-package (omg-read s)))
@@ -1548,7 +1564,7 @@ self.postMessage('BOOT')
                      (gimme sym))))))
           ((and (equal uri (concatenate 'string *root-path* *takit-path*))
                 (getf env :content-length))
-           (let ((str (base64:base64-string-to-string (get-str-from (getf env :raw-body) (getf env :content-length)))))
+           (let ((str (from-base64 (get-str-from (getf env :raw-body) (getf env :content-length)))))
              (with-input-from-string (s str)
                (let* ((session-id (intern (symbol-name (omg-read s)) :omg))
                       (*current-session* (find-session session-id))
