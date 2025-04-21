@@ -766,7 +766,7 @@ if(!OMG.inServiceWorker) {
 (defvar *session-list* (make-hash-table))  ;; The store for session objects, keys are session-ids
 (defvar *current-res* nil) ;; The key for gimme-wait-list hash, denotes the place where to store result for
                                  ;;   current gimme request
-(defvar *in-rpc* nil) ;; If T -- we are in RPC call, all remote-execs must be done via takit-mechanism
+(defvar *in-rpc* nil) ;; If not NIL -- we are in RPC call, all remote-execs must be done via takit-mechanism
 
 (defun current-session-id ()
   (if *current-session*
@@ -1198,7 +1198,7 @@ if(!OMG.inServiceWorker) {
                                  key)))
               :initial-bindings `((*current-res* . ',key)
                                   (*current-session* . ,*current-session*)
-                                  (*in-rpc* . t)))
+                                  (*in-rpc* . ,(if *current-session* *current-session* t))))
             *omg-thread-list*)
       (if (wait-on-semaphore sem :timeout 600)
           (let ((res (cdr (assoc :result (gethash-lock key *gimme-wait-list*)))))
@@ -1246,7 +1246,7 @@ if(!OMG.inServiceWorker) {
    within the specific session, otherwise, the code will be executed in all sessions and all the return
    values are returned as a list. If the nowait is T, the function will retrurn NIL immediately, without waiting
    result from the remote side."
-  (if *in-rpc*
+  (if (and *in-rpc* (equal *in-rpc* *current-session*))
     (let* ((cur-res *current-res*)
            (sem-tim-sym (gethash-lock *current-res* *gimme-wait-list*))
            (sem (cdr (assoc :sem sem-tim-sym)))
