@@ -1239,6 +1239,7 @@ if(!OMG.inServiceWorker) {
             (error "Remote macro timeout")))
       (remote-exec `(apply (lambda ,@(cddr (gethash-lock name *exportable-expressions*))) ',args))))
 
+(defparameter *remote-exec-timeout* 600)
 
 (defun remote-exec (cmd &optional nowait)
   "Execute the code on the browser-side. If the *current-session* set, the code will be executed
@@ -1265,7 +1266,7 @@ if(!OMG.inServiceWorker) {
                                       mcod))
               ,(assoc :time sem-tim-sym)))
       (signal-semaphore sem)
-      (if (wait-on-semaphore takit-sem :timeout 600)
+      (if (wait-on-semaphore takit-sem :timeout *remote-exec-timeout*)
           (let ((res (cdr (assoc :result (gethash-lock cur-res *takit-wait-list*)))))
             (remhash cur-res *takit-wait-list*)
             (unintern cur-res)
@@ -1299,7 +1300,7 @@ if(!OMG.inServiceWorker) {
                            (if (not nowait) (setf (gethash-lock key wlist) (list (current-thread) sem nil nil)))
                            (send-text sock jscmd)
                            (if (not nowait)
-                               (labels ((get-res (&key (timeout 600) retry)
+                               (labels ((get-res (&key (timeout *remote-exec-timeout*) retry)
                                           (if (wait-on-semaphore sem :timeout timeout-chunk)
                                               (let ((ret (let ((*read-eval* nil))
                                                            (omg-read-from-string (caddr (gethash-lock key wlist))))))
