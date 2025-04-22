@@ -1356,7 +1356,7 @@ if(!OMG.inServiceWorker) {
                                (values nil nil)))
                        (progn
                          (if (equal sock-state :closed)
-                             (emit :close sock))
+                             (ignore-errors (emit :close sock)))
                          (values nil t))))))
       (if *current-session*
           (multiple-value-bind (r timeout) (exec)
@@ -1668,7 +1668,7 @@ self.postMessage('BOOT')
                                    (ws (session-ws ses)))
                               (when ws
                                 (when (equal (ready-state ws) :closed)
-                                  (emit :close ws))
+                                  (ignore-errors (emit :close ws)))
                                 (ignore-errors (send-ping ws))
                                 (when (equal (ready-state ws) :closing)
                                   (ignore-errors (close-connection ws))))
