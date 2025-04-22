@@ -1291,7 +1291,7 @@ if(!OMG.inServiceWorker) {
            (takit-sem (make-semaphore))
            (mcod (compile-to-js (if nowait
                                     cmd
-                                    `(jscl::omg-write-to-string ,cmd))
+                                    `(jscl::omg-write-to-string (multiple-value-list ,cmd)))
                                 *package*)))
       (setf (gethash-lock cur-res *takit-wait-list*) `((:sem . ,takit-sem) (:time . ,(get-universal-time)) ,(assoc :symbol sem-tim-sym)))
       (setf (gethash-lock cur-res *gimme-wait-list*)
@@ -1308,7 +1308,7 @@ if(!OMG.inServiceWorker) {
           (let ((res (cdr (assoc :result (gethash-lock cur-res *takit-wait-list*)))))
             (remhash cur-res *takit-wait-list*)
             (unintern cur-res)
-            res)
+            (apply #'values res))
           (error (make-instance 'remote-exec-timeout))))
     (flet ((exec () (let* ((wlist (wait-list *current-session*))
                            (sock (socket *current-session*))
