@@ -649,7 +649,7 @@ Just after connection, the some boot code will be executed in browser. You can c
 
 ### REMOTE-EXEC function
 
-You can use `(remote-exec cmd [nowait])` function to execute any CL code `cmd` in the browser. This function has optional argument `nowait` - set it to `T` if you are not needed to return value(s) and the function will return nil immediately. If there is a timeout occurred while waiting a response, a error condition will be raised, when you call it within a session context. If no current session is set, the code will be executed in all connected browsers and list of return values will be returned.
+You can use `(remote-exec cmd [nowait])` function to execute any CL code `cmd` in the browser. This function has optional argument `nowait` - set it to `T` if you are not needed to return value(s) and the function will return nil immediately. If there is a timeout occurred while waiting a response, a error condition will be raised, when you call it within a session context. If no current session is set, the code will be executed in all connected browsers and list of return values will be returned. You can change remote-exec timeout by setting the `omg::*remote-exec-timeout*` (in seconds), which is 600 by default.
 
 ### Adding a custom HTML into default document body
 
