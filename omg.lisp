@@ -84,7 +84,8 @@
                                    (res . ,res)
                                    (i . ,i)
                                    (*current-session* . ,*current-session*)
-                                   (*in-rpc* . ,*in-rpc*)))))
+                                   (*in-rpc* . ,*in-rpc*)
+                                   (*current-res* . ',*current-res*)))))
         ,@maps))
     (loop for i below len collect
       (progn
@@ -1705,5 +1706,6 @@ self.postMessage('BOOT')
            (lambda ()
              ,@code)
            :initial-bindings `((*current-session* . ,*current-session*)
-                               (*in-rpc* . ,*in-rpc*)))
+                               (*in-rpc* . ,*in-rpc*)
+                               (*current-res* . ',*current-res*)))
          *omg-thread-list*))
