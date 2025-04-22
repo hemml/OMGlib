@@ -30,7 +30,8 @@
            current-session-id  ;; get ID of current session (returns NIL if no session)
            set-debug-session  ;; mark current session as "debug"
            in-debug-session ;; execute code in debug session
-           thread-in-session)) ;; spawn thread in current session
+           thread-in-session ;; spawn thread in current session
+           remote-exec-timeout)) ;; remote-exec timeout condition
 
 (in-package :omg)
 
@@ -1271,6 +1272,13 @@ if(!OMG.inServiceWorker) {
 
 (defparameter *remote-exec-timeout* 600)
 
+(define-condition remote-exec-timeout (error)
+  ((session :initarg :session
+            :initform *current-session*
+            :reader session))
+  (:report (lambda (c s)
+             (format s "remote-exec timeout in session ~A" (get-id (session c))))))
+
 (defun remote-exec (cmd &optional nowait)
   "Execute the code on the browser-side. If the *current-session* set, the code will be executed
    within the specific session, otherwise, the code will be executed in all sessions and all the return
@@ -1301,7 +1309,7 @@ if(!OMG.inServiceWorker) {
             (remhash cur-res *takit-wait-list*)
             (unintern cur-res)
             res)
-          (error "Timeout")))
+          (error (make-instance 'remote-exec-timeout))))
     (flet ((exec () (let* ((wlist (wait-list *current-session*))
                            (sock (socket *current-session*))
                            (sock-state (ready-state sock))
@@ -1354,7 +1362,7 @@ if(!OMG.inServiceWorker) {
           (multiple-value-bind (r timeout) (exec)
             (if (not timeout)
                 (apply #'values r)
-                (error "Timeout in remote-exec")))
+                (error (make-instance 'remote-exec-timeout))))
           (mapcar #'car
                   (remove-if #'null
                     (par-map (lambda (s) (with-session s (exec)))
