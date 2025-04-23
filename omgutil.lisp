@@ -3,7 +3,9 @@
   (:export defclass-m             ;; define a both-side class
            sync-slot              ;; slot syncronization method for mirrored instances
            data-sync              ;; a class for objects which needs a data syncronization
-           sync-data)              ;; method called if data synchronization needed for data-sync clacc
+           sync-data              ;; method called if data synchronization needed for data-sync clacc
+           get-timeouts           ;; returns number of timeouts in the current session
+           reset-timeouts)        ;; resets to zero number of timeouts in the current session
   (:import-from omg defclass-m
                     mirrored-object
                     sync-all-data
@@ -54,3 +56,11 @@
 
 (defmethod-f initialize-instance :after ((obj data-sync) &key &rest args)
   (pushnew obj *data-sync-objects*))
+
+(defun-r get-timeouts ()
+  (when omg::*current-session*
+    (slot-value omg::*current-session* 'omg::timeouts)))
+
+(defun-r reset-timeouts ()
+  (when omg::*current-session*
+    (setf (slot-value omg::*current-session* 'omg::timeouts) 0)))

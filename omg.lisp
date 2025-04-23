@@ -809,6 +809,7 @@ if(!OMG.inServiceWorker) {
            :reader socket)
    (ses-id :initform (random-symbol |sid-length|)
            :reader get-id)
+   (timeouts :initform 0)
    (last-active :initform (get-universal-time)
                 :reader last-active)
    (wait-list :initform (make-hash-table)
@@ -1277,7 +1278,9 @@ if(!OMG.inServiceWorker) {
 
 (define-condition remote-exec-timeout (error)
   ((session :initarg :session
-            :initform *current-session*
+            :initform (when *current-session*
+                        (incf (slot-value *current-session* 'timeouts))
+                        *current-session*)
             :reader session))
   (:report (lambda (c s)
              (format s "remote-exec timeout in session ~A" (get-id (session c))))))
@@ -1354,21 +1357,17 @@ if(!OMG.inServiceWorker) {
                                                        (> timeout timeout-chunk)
                                                        (equal (ready-state (socket *current-session*)) :open))
                                                   (multiple-value-call #'get-res :timeout (- timeout timeout-chunk) :retry retry)
-                                                  (values nil t)))))
-                                 (multiple-value-call #'get-res :retry t))
-                               (values nil nil)))
+                                                  (error (make-instance 'remote-exec-timeout))))))
+                                 (multiple-value-call #'get-res :retry t))))
                          (progn
                            (if (equal sock-state :closed)
                                (ignore-errors (emit :close sock)))
-                           (values nil t))))))
+                           (error (make-instance 'remote-exec-timeout)))))))
       (if *current-session*
-          (multiple-value-bind (r timeout) (exec)
-            (if (not timeout)
-                (apply #'values r)
-                (error (make-instance 'remote-exec-timeout))))
+          (apply #'values (exec))
           (mapcar #'car
                   (remove-if #'null
-                    (par-map (lambda (s) (with-session s (exec)))
+                    (par-map (lambda (s) (ignore-errors (with-session s (exec))))
                              (loop for s being the hash-values of *session-list*
                                when (equal :open (ready-state (socket s))) collect s))))))))
 
