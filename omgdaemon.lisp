@@ -830,7 +830,7 @@
   (disable-debugger)
   (save-executable (merge-pathnames (make-pathname :name "omgdaemon")) #'run-daemon))
 
-(defun make-docker-image (&key (tag 'omgdaemon) (sbcl-version "2.4.7"))
+(defun make-docker-image (&key (tag 'omgdaemon) (sbcl-version "2.5.3"))
   (with-input-from-string
     (fd (format nil "FROM debian
 RUN apt-get update && apt-get dist-upgrade -y
