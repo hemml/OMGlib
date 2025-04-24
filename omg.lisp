@@ -1468,7 +1468,8 @@ if(!OMG.inServiceWorker) {
                         (setf (cadddr trsem) t)))))))))
     (on :close ws
        (lambda (&key code reason)
-        (format t "WS closed (~a ~a)~%" code reason)
+        (declare (ignorable code reason))
+        ;;(format t "WS closed (~a ~a)~%" code reason)
         (setf (disconnected-at ses) (get-universal-time))
         (setf (session-ws ses) nil)
         (when (and sock-thread (not (equal sock-thread (bt:current-thread))))
