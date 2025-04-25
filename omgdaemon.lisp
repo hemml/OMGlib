@@ -716,7 +716,7 @@
 (defmethod feed-connected ((c async-conn))
   (with-slots (connected read-buf base fin conn) c
     (when (not (empty-p read-buf))
-      (let ((conn-dt 0.01))7
+      (let ((conn-dt 0.01))
         (labels ((schedule-push ()
                    (setf conn-dt (min 5.0 (* conn-dt 1.1)))
                    (add-timer base #'try-push conn-dt :one-shot t))
