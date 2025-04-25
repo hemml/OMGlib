@@ -538,7 +538,8 @@
                       (progn ,@code)
                       (progn
                         (setf ,dt (min 5.0 (* 1.1 ,dt)))
-                        (add-timer ,base #',fn ,dt :one-shot t)))))
+                        (when (< ,dt 30)
+                          (add-timer ,base #',fn ,dt :one-shot t))))))
          (,fn)))))
 
 (defvar *version-spawn-threads* (make-hash-table :test #'equalp))
@@ -719,7 +720,8 @@
       (let ((conn-dt 0.01))
         (labels ((schedule-push ()
                    (setf conn-dt (min 5.0 (* conn-dt 1.1)))
-                   (add-timer base #'try-push conn-dt :one-shot t))
+                   (when (< dt 30)
+                     (add-timer base #'try-push conn-dt :one-shot t)))
                  (try-push ()
                    (when connected
                      (with-slots (write-buf) connected
