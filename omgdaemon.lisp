@@ -531,15 +531,18 @@
 
 (defmacro wait-for (base pred &rest code)
   (let ((fn (gensym))
-        (dt (gensym)))
-    `(let ((,dt 0.01))
+        (dt (gensym))
+        (t0 (gensym)))
+    `(let ((,dt 0.01)
+           (t0 (get-universal-time)))
        (labels ((,fn ()
                   (if ,pred
                       (progn ,@code)
                       (progn
                         (setf ,dt (min 5.0 (* 1.1 ,dt)))
-                        (when (< ,dt 30)
-                          (add-timer ,base #',fn ,dt :one-shot t))))))
+                        (if (< (- (get-universal-time) ,t0) 60)
+                            (add-timer ,base #',fn ,dt :one-shot t)
+                            (log:debug "GIVING UP"))))))
          (,fn)))))
 
 (defvar *version-spawn-threads* (make-hash-table :test #'equalp))
@@ -717,11 +720,13 @@
 (defmethod feed-connected ((c async-conn))
   (with-slots (connected read-buf base fin conn) c
     (when (not (empty-p read-buf))
-      (let ((conn-dt 0.01))
+      (let ((conn-dt 0.01)
+            (t0 (get-universal-time)))
         (labels ((schedule-push ()
                    (setf conn-dt (min 5.0 (* conn-dt 1.1)))
-                   (when (< dt 30)
-                     (add-timer base #'try-push conn-dt :one-shot t)))
+                   (if (< (- (get-universal-time) t0) 60)
+                       (add-timer base #'try-push conn-dt :one-shot t)
+                       (log:debug "GIVING UP 1")))
                  (try-push ()
                    (when connected
                      (with-slots (write-buf) connected
