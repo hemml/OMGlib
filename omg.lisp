@@ -1480,7 +1480,6 @@ if(!OMG.inServiceWorker) {
         (when (equal sock-thread (bt:current-thread))
           (bt:make-thread
             (lambda ()
-              (log:info *thread-to-kill*)
               (bt:destroy-thread *thread-to-kill*))
             :initial-bindings `((*thread-to-kill* . ,(bt:current-thread)))))
         (when (and sock-thread (not (equal sock-thread (bt:current-thread))))
