@@ -1660,6 +1660,7 @@ self.postMessage('BOOT')
                    :ssl-cert-file ,*ssl-cert*
                    :debug nil
                    :use-default-middlewares nil
+                   :persistent-connections-p nil
                    ,@*last-args*))))
   (if *serv*
       (push (bt:make-thread
