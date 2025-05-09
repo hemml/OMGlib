@@ -1413,6 +1413,8 @@ if(!OMG.inServiceWorker) {
 
                :nowait))
 
+(defparameter *thread-to-kill* nil)
+
 (defun make-ws (env)
   "Return the websocket for the new session. Also, creates the session object."
   (let* ((ws (websocket-driver.server:make-server env))
@@ -1475,6 +1477,12 @@ if(!OMG.inServiceWorker) {
         ;;(format t "WS closed (~a ~a)~%" code reason)
         (setf (disconnected-at ses) (get-universal-time))
         (setf (session-ws ses) nil)
+        (when (equal sock-thread (bt:current-thread))
+          (bt:make-thread
+            (lambda ()
+              (log:info *thread-to-kill*)
+              (bt:destroy-thread *thread-to-kill*))
+            :initial-bindings `((*thread-to-kill* . ,(bt:current-thread)))))
         (when (and sock-thread (not (equal sock-thread (bt:current-thread))))
           (bt:destroy-thread sock-thread))))
     ws))
