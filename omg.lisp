@@ -87,7 +87,8 @@
                                    (*current-session* . ,*current-session*)
                                    (*in-rpc* . ,*in-rpc*)
                                    (*current-res* . ',*current-res*)
-                                   (*remote-exec-timeout* . ,*remote-exec-timeout*)))))
+                                   (*remote-exec-timeout* . ,*remote-exec-timeout*))
+               :name "par-map thread")))
         ,@maps))
     (loop for i below len collect
       (progn
@@ -1207,7 +1208,8 @@ if(!OMG.inServiceWorker) {
                          :initial-bindings `((*current-res* . ',key)
                                              (*current-session* . ,*current-session*)
                                              (*in-rpc* . ,*in-rpc*)
-                                             (*remote-exec-timeout* . ,*remote-exec-timeout*)))
+                                             (*remote-exec-timeout* . ,*remote-exec-timeout*))
+                         :name (format nil "Gimme thread for ~A" sym))
                       *omg-thread-list*)
                 (if (wait-on-semaphore sem :timeout 600)
                     (let ((res (cdr (assoc :result (gethash-lock key *gimme-wait-list*)))))
@@ -1233,7 +1235,8 @@ if(!OMG.inServiceWorker) {
               :initial-bindings `((*current-res* . ',key)
                                   (*current-session* . ,*current-session*)
                                   (*in-rpc* . ,(if *current-session* *current-session* t))
-                                  (*remote-exec-timeout* . ,*remote-exec-timeout*)))
+                                  (*remote-exec-timeout* . ,*remote-exec-timeout*))
+              :name (format nil "RPC thread for ~A" op))
             *omg-thread-list*)
       (if (wait-on-semaphore sem :timeout 600)
           (let ((res (cdr (assoc :result (gethash-lock key *gimme-wait-list*)))))
@@ -1541,6 +1544,7 @@ self.postMessage('BOOT')
 (defun serv (env)
   (let ((uri (getf env :REQUEST-URI))
         (*read-eval* nil))
+    (setf (slot-value (bt:current-thread) 'sb-thread::%name) uri)
     (cond ((equal uri (concatenate 'string *root-path* *service-worker-path*))
            `(200
                (:content-type "text/javascript; charset=utf-8"
