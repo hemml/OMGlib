@@ -1551,7 +1551,7 @@ self.postMessage('BOOT')
 (defun serv (env)
   (let ((uri (getf env :REQUEST-URI))
         (*read-eval* nil))
-    (setf (slot-value (bt:current-thread) 'sb-thread::%name) uri)
+    ;;(setf (slot-value (bt:current-thread) 'sb-thread::%name) uri)
     (cond ((equal uri (concatenate 'string *root-path* *service-worker-path*))
            `(200
                (:content-type "text/javascript; charset=utf-8"
