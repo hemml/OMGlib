@@ -1419,8 +1419,7 @@ if(!OMG.inServiceWorker) {
   "Return the websocket for the new session. Also, creates the session object."
   (let* ((ws (websocket-driver.server:make-server env))
          (ses (make-instance 'omg-session :socket ws :ws ws))
-         (sid (get-id ses))
-         (sock-thread (bt:current-thread)))
+         (sid (get-id ses)))
     (setf (gethash-lock sid *session-list*) ses)
     (on :open ws
       (lambda ()
@@ -1433,8 +1432,7 @@ if(!OMG.inServiceWorker) {
                     (ignore-errors (boot-f))
                     (loop while (equal (ready-state ws) :open) do
                       (sleep 60))
-                    (ignore-errors (bt:destroy-thread *thread-to-kill*))
-                    (ignore-errors (bt:destroy-thread sock-thread))))
+                    (ignore-errors (bt:destroy-thread *thread-to-kill*))))
                 :name (concatenate 'string (symbol-name sid) "-BOOT")
                 :initial-bindings `((*thread-to-kill* . ,(bt:current-thread))))
               *omg-thread-list*)))
