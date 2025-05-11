@@ -1430,8 +1430,13 @@ if(!OMG.inServiceWorker) {
                         (*package* (find-package :omg)))
                     (if *current-session*
                         (setf (slot-value *current-session* 'last-active) (get-universal-time)))
-                    (boot-f)))
-                :name (concatenate 'string (symbol-name sid) "-BOOT"))
+                    (ignore-errors (boot-f))
+                    (loop while (equal (ready-state ws) :open) do
+                      (sleep 60))
+                    (ignore-errors (bt:destroy-thread *thread-to-kill*))
+                    (ignore-errors (bt:destroy-thread sock-thread))))
+                :name (concatenate 'string (symbol-name sid) "-BOOT")
+                :initial-bindings `((*thread-to-kill* . ,(bt:current-thread))))
               *omg-thread-list*)))
     (on :error ws
       (lambda (error)
@@ -1476,14 +1481,7 @@ if(!OMG.inServiceWorker) {
         (declare (ignorable code reason))
         ;;(format t "WS closed (~a ~a)~%" code reason)
         (setf (disconnected-at ses) (get-universal-time))
-        (setf (session-ws ses) nil)
-        (when (equal sock-thread (bt:current-thread))
-          (bt:make-thread
-            (lambda ()
-              (bt:destroy-thread *thread-to-kill*))
-            :initial-bindings `((*thread-to-kill* . ,(bt:current-thread)))))
-        (when (and sock-thread (not (equal sock-thread (bt:current-thread))))
-          (bt:destroy-thread sock-thread))))
+        (setf (session-ws ses) nil)))
     ws))
 
 (defun get-str-from (s len)
@@ -1684,7 +1682,7 @@ self.postMessage('BOOT')
                               (when ws
                                 (when (equal (ready-state ws) :closed)
                                   (ignore-errors (emit :close ws)))
-                                (ignore-errors (send-ping ws))
+                                (send-ping ws)
                                 (when (equal (ready-state ws) :closing)
                                   (ignore-errors (close-connection ws))))
                               (if (and (disconnected-at ses)
