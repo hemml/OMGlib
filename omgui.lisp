@@ -1637,6 +1637,13 @@
                                     (let (inst
                                           (b22 b2))
                                       (psp (map nil (lambda (slt) (setf (slot-value inst (car slt)) (cdr slt))) obj)
+                                           (map nil (lambda (slt)
+                                                      (let ((name (jscl::slot-definition-name slt)))
+                                                        (when (not (find name obj :key #'car))
+                                                          (let ((ini (jscl::slot-definition-initform slt)))
+                                                            (when ini
+                                                              (setf (slot-value inst name) (eval ini)))))))
+                                                    (jscl::class-slots (class-of inst)))
                                            (cur-lam inst))
                                       (psp (setf inst (allocate-instance (find-class obj)))
                                            (setf (gethash b22 obj-hash) inst))))))
