@@ -1640,9 +1640,9 @@
                                            (map nil (lambda (slt)
                                                       (let ((name (jscl::slot-definition-name slt)))
                                                         (when (not (find name obj :key #'car))
-                                                          (let ((ini (jscl::slot-definition-initform slt)))
+                                                          (let ((ini (jscl::slot-definition-initfunction slt)))
                                                             (when ini
-                                                              (setf (slot-value inst name) (eval ini)))))))
+                                                              (setf (slot-value inst name) (funcall ini)))))))
                                                     (jscl::class-slots (class-of inst)))
                                            (cur-lam inst))
                                       (psp (setf inst (allocate-instance (find-class obj)))
