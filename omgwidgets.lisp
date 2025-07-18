@@ -517,16 +517,16 @@
 
 (defmethod-f redraw ((w omg-widget))
   (if (slot-boundp w 'root)
-    (let* ((old-root (root w))
-           (new-root (render-widget w))
-           (parent (parent-element old-root)))
-      (if (and old-root
-               (jscl::oget old-root "isConnected")
-               (not (eql old-root new-root)))
-        (progn
-          ((jscl::oget parent "insertBefore") new-root old-root)
-          (remove-element old-root)))
-      new-root)))
+    (with-slots (root) w
+      (let* ((new-root (render-widget w))
+             (parent (parent-element old-root)))
+        (if (and root
+                 (jscl::oget root "isConnected")
+                 (not (eql root new-root)))
+          (progn
+            ((jscl::oget parent "insertBefore") new-root root)
+            (remove-element root)))
+        (setf root new-root)))))
 
 ;;;;;;;;;;;;;; editable-field ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
