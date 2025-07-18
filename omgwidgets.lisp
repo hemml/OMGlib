@@ -409,8 +409,8 @@
                                      :append-elements (if right-scale (list (create-element "td"))))))))))
   (ensure-element (graph g)
     (loop for p in (plots g) do
-      (if (not (and (root p) (jscl::oget (root p) "isConnected")))
-          (append-element (render-widget p) (graph g)))))
+      (when (not (and (root p) (jscl::oget (root p) "isConnected")))
+        (append-element (render-widget p) (graph g)))))
   (rescale-auto g)
   (root g))
 
