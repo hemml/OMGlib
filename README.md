@@ -860,6 +860,7 @@ If there is not enough room in the buffer supplied to store an object, `store-to
 
 If you have to store/load huge objects, you may prevent interface freezes by making all the process asynchronous by using `:background`, `progress-cb` abd `final-cb` options of `store-to-buffer` and `load-from-buffer` functions. When you specify `:background t` option, the process will be executed in background with 0.1 sec chunks (you can supply another time chunk value with `:background 0.5` for example), after each chunk finishing the function  provided with `progress-cb` will be called with single argm equal to current load/store position (in bytes). When the process is done, `final-cb` function will be called. The arguments will be an `ArrayBuffer` (for store-to-buffer) or the loaded object (for `load-from-buffer`) and the last position (in bytes).
 
+When you loading a MOP object, which class was changed, new slots will be initialized via `:initform` or `initfunction`. For each loaded MOP-object the method `(mop-object-loaded obj)` will be called, so you can hook it to perform all needed initialization.
 
 ### indexedDB
 

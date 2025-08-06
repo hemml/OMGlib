@@ -70,6 +70,7 @@
            make-svg
            make-tab-form
            modal-dialog
+           mop-object-loaded
            now
            oget-bind
            on-element-remove
@@ -1553,6 +1554,8 @@
             (loop while lambda-stack do (funcall (car lambda-stack))))
         start))))
 
+(defmethod-f mop-object-loaded ((obj t)))
+
 (defun-f load-from-buffer (buf &key (start 0) background progress-cb final-cb)
   (let ((len (jscl::oget buf "byteLength"))
         (obj-hash (make-hash-table))
@@ -1644,6 +1647,7 @@
                                                             (when ini
                                                               (setf (slot-value inst name) (funcall ini)))))))
                                                     (jscl::class-slots (class-of inst)))
+                                           (mop-object-loaded inst)
                                            (cur-lam inst))
                                       (psp (setf inst (allocate-instance (find-class obj)))
                                            (setf (gethash b22 obj-hash) inst))))))
