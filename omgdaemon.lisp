@@ -520,7 +520,8 @@
    (readed :initform 0)
    (written :initform 0)
    (write-registered :initform nil)
-   (conn-id :initform "[unknown ip:port]")))
+   (conn-id :initform "[unknown ip:port]")
+   (conn-url :initform nil :initarg :url)))
 
 (defclass selector-conn (async-conn)
   ((last-pos :initform 0)
@@ -629,15 +630,20 @@
                         (return-from push-to (call-next-method))))))))))))
 
 (defmethod try-read :after ((c selector-conn))
-  (with-slots (connected last-pos read-buf cookie-found) c
+  (with-slots (connected last-pos read-buf cookie-found conn-id conn-url) c
     (when (and (not connected) (not cookie-found))
       (if (full-p read-buf)
-          (close-conn c)
+          (progn
+            (log:debug "FULL-P CLOSE ~A" conn-id)
+            (close-conn c))
           (multiple-value-bind (buf start end) (data-available read-buf)
             (declare (ignore start))
             (loop for pos = (position +nl-code+ buf :start last-pos :end end) while pos do
               (let* ((s (trivial-utf-8:utf-8-bytes-to-string buf :start last-pos :end (1- pos)))
-                     (cp (position #\: s)))
+                     (cp (position #\: s))
+                     (sp (position #\space s)))
+                (when (and sp (string-equal s "GET" :end1 sp))
+                  (setf conn-url s))
                 (when (and cp (string-equal s "cookie" :end1 cp))
                   (let* ((p (search +version-cookie-prefix+ s :start2 cp))
                          (ps (if p (+ p (length +version-cookie-prefix+))))
@@ -645,7 +651,7 @@
                          (pe2 (if pe pe (length s)))
                          (val (if p (subseq s ps pe2))))
                     (when val
-                      (log:debug "Version cookie found: [~A]" val)
+                      (log:debug "Version cookie found: [~A]" val conn-url)
                       (return (connect-to-version c val)))))
                 (when (= 0 (length s))
                   (return (connect-to-version c)))
@@ -668,34 +674,34 @@
     (remhash c *active-connections*)))
 
 (defmethod try-write ((c async-conn))
-  (with-slots (conn base fin write-registered write-buf written conn-id) c
+  (with-slots (conn base fin write-registered write-buf written conn-id conn-url) c
     (handler-case
       (progn
         (if (not (empty-p write-buf))
             (multiple-value-bind (buf start end) (data-available write-buf)
               (let ((wb (send-to conn buf :start start :end end)))
-                (log:debug "~A Written ~A bytes" conn-id wb)
+                (log:debug "~A [~A] Written ~A bytes" conn-id conn-url wb)
                 (incf written wb)
                 (deallocate-space write-buf wb)))
             (progn
               (ignore-errors (remove-fd-handlers base (socket-os-fd conn) :write t))
               (setf write-registered nil)))
         (when (and fin (empty-p write-buf))
-          (log:debug "Finalized connection ~A, closing" conn-id)
+          (log:debug "Finalized connection ~A [~A], closing" conn-id conn-url)
           (close-conn c :close t)))
       (socket-connection-reset-error ()
-        (log:debug "Client ~A: connection reset by peer" conn-id)
+        (log:debug "Client ~A [~A]: connection reset by peer" conn-id conn-url)
         (close-conn conn))
       (isys:ewouldblock ()
         (log:debug "write-some-bytes: ewouldblock"))
       (isys:epipe ()
-        (log:debug "Client ~A got hangup on write" conn-id)
+        (log:debug "Client ~A [~A] got hangup on write" conn-id conn-url)
         (close-conn conn)))))
 
 (defmethod fin ((c async-conn) &optional err)
-  (with-slots (fin base conn connected read-buf) c
+  (with-slots (fin base conn connected read-buf conn-url) c
     (when (not fin)
-      (when err (log:debug "~A" err))
+      (when err (log:debug "~A [~A]" err conn-url))
       (ignore-errors (remove-fd-handlers base (socket-os-fd conn) :read t))
       (setf fin t)
       (try-write c))))
@@ -718,7 +724,7 @@
         cw))))
 
 (defmethod feed-connected ((c async-conn))
-  (with-slots (connected read-buf base fin conn) c
+  (with-slots (connected read-buf base fin conn conn-url) c
     (when (not (empty-p read-buf))
       (let ((conn-dt 0.01)
             (t0 (get-universal-time)))
@@ -726,7 +732,7 @@
                    (setf conn-dt (min 5.0 (* conn-dt 1.1)))
                    (if (< (- (get-universal-time) t0) 60)
                        (add-timer base #'try-push conn-dt :one-shot t)
-                       (log:debug "GIVING UP 1")))
+                       (log:debug "[~A] GIVING UP 1" conn-url)))
                  (try-push ()
                    (when connected
                      (with-slots (write-buf) connected
@@ -742,7 +748,7 @@
           (try-push))))))
 
 (defmethod try-read ((c async-conn))
-  (with-slots (fin conn base read-buf connected readed conn-id) c
+  (with-slots (fin conn base read-buf connected readed conn-id conn-url) c
     (when (and (not fin) (not (full-p read-buf)))
       (handler-case
         (multiple-value-bind (buf start end) (get-space read-buf)
@@ -751,14 +757,14 @@
               (declare (ignore buf))
               (when (= 0 rb)
                 (error 'end-of-file))
-              (log:debug "~A Readed ~A bytes" conn-id rb)
+              (log:debug "~A [~A] Readed ~A bytes" conn-id conn-url rb)
               (incf readed rb)
               (allocate-space read-buf rb)
               (feed-connected c))))
         (socket-connection-reset-error ()
-          (fin c (format nil "Client ~A: connection reset by peer" conn-id)))
+          (fin c (format nil "Client ~A [~A]: connection reset by peer" conn-id conn-url)))
         (end-of-file ()
-          (fin c (format nil "Client ~A produced end-of-file on a read" conn-id)))))))
+          (fin c (format nil "Client ~A [~A] produced end-of-file on a read" conn-id)))))))
 
 (defmethod initialize-instance :after ((c async-conn) &key &allow-other-keys)
   (when (not (slot-boundp c 'conn))
