@@ -352,7 +352,8 @@
 (defvar *classes-f-slots* (make-hash-table))
 (defvar *classes-f-superclasses* (make-hash-table))
 
-(defmacro defclass-f (name sup slots)
+(defmacro defclass-f (name sup slots &rest options)
+  (declare (ignorable options))
   (let ((f-form `(defclass ,name ,sup ,slots))
         (tmp (gensym)))
     (setf (gethash name *classes-f-slots*) slots)
