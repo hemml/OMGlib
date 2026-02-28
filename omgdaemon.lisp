@@ -663,14 +663,23 @@
     (feed-connected from)))
 
 (defmethod close-conn ((c async-conn) &key close abort)
-  (with-slots (conn base connected written readed conn-id) c
-    (let ((fd (socket-os-fd conn)))
-      (ignore-errors (remove-fd-handlers base fd :read t :write t :error t))
-      (log:debug "Closing connection to ~A (abort: ~A close: ~A) W: ~A R: ~A" conn-id abort close written readed)
-      (if abort
-          (close conn :abort t)
-          (if close
-              (close conn))))
+  (with-slots (conn base connected written readed conn-id conn-url) c
+    (when conn
+      (let ((fd (socket-os-fd conn)))
+        (ignore-errors (remove-fd-handlers base fd :read t :write t :error t))
+        (log:debug "Closing connection to ~A [~A] (abort: ~A close: ~A) W: ~A R: ~A" conn-id conn-url abort close written readed)
+        (if abort
+            (close conn :abort t)
+            (if close
+                (close conn)))
+        (setf conn nil)
+        (when connected
+          (let ((c connected))
+            (setf connected nil)
+            (fin c)
+            (close-conn c)))))
+
+
     (remhash c *active-connections*)))
 
 (defmethod try-write ((c async-conn))
