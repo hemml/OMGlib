@@ -82,7 +82,6 @@
          (st-o (swank/backend:make-fd-stream (parse-integer (cadr args)) :UTF-8))
          (eofv (gensym)))
     (loop for i from 4 to 2048 when (and (not (position i fds)) (osicat-posix:fd-open-p i)) do
-        (log:debug "Closing FD ~A" i)
         (osicat-posix:close i)) ;; For security reasons closing all unneeded file descriptors
     (if (caddr args) ;; For devel version two additional FDs are supplied, to execute commands in proxy process
         (setf *main-st-i* (swank/backend:make-fd-stream (parse-integer (caddr args)) :UTF-8)))
@@ -309,6 +308,7 @@
                                           `(,(format nil "~A" (car dpip2))
                                             ,(format nil "~A" (cadr dpip1))))))
                             (argc (+ 2 (length args))))
+                       (osicat-posix:setsid)
                        (cffi:with-foreign-object (argv :pointer argc)
                          (iolib/syscalls:bzero argv (* argc (iolib/syscalls:sizeof :pointer)))
                          (loop for s in args and i below (length args) do (setf (cffi:mem-aref argv :pointer i) (cffi:foreign-string-alloc s)))
@@ -535,7 +535,7 @@
         (dt (gensym))
         (t0 (gensym)))
     `(let ((,dt 0.01)
-           (t0 (get-universal-time)))
+           (,t0 (get-universal-time)))
        (labels ((,fn ()
                   (if ,pred
                       (progn ,@code)
@@ -591,7 +591,7 @@
               (log:debug "Cannot wait more for version ~A" version)))))))
 
 (defmethod push-to ((c selector-conn) buf &key (start 0) (end (array-dimension buf 0)))
-  (with-slots (cookie-sent-state cur-str-len write-buf version-id) c
+  (with-slots (cookie-sent-state cur-str-len write-buf version-id conn-url) c
     (cond ((eql cookie-sent-state :cookie-sent)
            (call-next-method))
           ((eql cookie-sent-state :send-a-cookie)
@@ -605,7 +605,7 @@
                 (when (>= (- end1 start1) cookie-len)
                   (replace buf1 cookie-hdr :start1 start1 :start2 0 :end1 (+ start1 cookie-len) :end2 cookie-len)
                   (allocate-space write-buf cookie-len)
-                  (register-write c)
+                  (try-write c)
                   (setf cookie-sent-state :cookie-sent)))
               (return-from push-to 0)))
           ((eql cookie-sent-state :waiting-end-of-hdrs)
@@ -619,7 +619,7 @@
                          (log:debug "End of headers found, injecting a cookie header")
                          (replace buf1 buf :start1 start1 :start2 start :end1 (+ start1 (- lpos start)) :end2 (+ start (- lpos start)))
                          (allocate-space write-buf (- lpos start))
-                         (register-write c)
+                         (try-write c)
                          (setf cookie-sent-state :send-a-cookie)
                          (return-from push-to (- lpos start))
                        when pos do
@@ -670,42 +670,49 @@
         (log:debug "Closing connection to ~A [~A] (abort: ~A close: ~A) W: ~A R: ~A" conn-id conn-url abort close written readed)
         (if abort
             (close conn :abort t)
-            (if close
+            (when close
                 (close conn)))
-        (setf conn nil)
         (when connected
           (let ((c connected))
             (setf connected nil)
-            (fin c)
-            (close-conn c)))))
-
-
-    (remhash c *active-connections*)))
+            (fin c))))))
+  (remhash c *active-connections*))
 
 (defmethod try-write ((c async-conn))
-  (with-slots (conn base fin write-registered write-buf written conn-id conn-url) c
-    (handler-case
-      (progn
-        (if (not (empty-p write-buf))
-            (multiple-value-bind (buf start end) (data-available write-buf)
-              (let ((wb (send-to conn buf :start start :end end)))
-                (log:debug "~A [~A] Written ~A bytes" conn-id conn-url wb)
-                (incf written wb)
-                (deallocate-space write-buf wb)))
-            (progn
-              (ignore-errors (remove-fd-handlers base (socket-os-fd conn) :write t))
-              (setf write-registered nil)))
-        (when (and fin (empty-p write-buf))
-          (log:debug "Finalized connection ~A [~A], closing" conn-id conn-url)
-          (close-conn c :close t)))
-      (socket-connection-reset-error ()
-        (log:debug "Client ~A [~A]: connection reset by peer" conn-id conn-url)
-        (close-conn conn))
-      (isys:ewouldblock ()
-        (log:debug "write-some-bytes: ewouldblock"))
-      (isys:epipe ()
-        (log:debug "Client ~A [~A] got hangup on write" conn-id conn-url)
-        (close-conn conn)))))
+  (with-slots (conn base read-buf fin write-registered write-buf written conn-id conn-url) c
+    (labels ((register-write ()
+               (when (not write-registered)
+                 (set-io-handler base (socket-os-fd conn) :write
+                   (lambda (&rest args)
+                     (declare (ignore args))
+                     (try-write c)))
+                 (setf write-registered t))))
+      (handler-case
+        (progn
+          (if (not (empty-p write-buf))
+              (multiple-value-bind (buf start end) (data-available write-buf)
+                (let ((wb (ignore-errors (send-to conn buf :start start :end end))))
+                  (when wb
+                    (log:debug "~A [~A] Written ~A bytes" conn-id conn-url wb)
+                    (incf written wb)
+                    (deallocate-space write-buf wb)
+                    (when (not (empty-p write-buf))
+                      (register-write)))))
+              (progn
+                (ignore-errors (remove-fd-handlers base (socket-os-fd conn) :write t))
+                (setf write-registered nil)))
+          (when (and fin (empty-p write-buf) (empty-p read-buf))
+            (log:debug "Finalized connection ~A [~A], closing" conn-id conn-url)
+            (close-conn c :close t)))
+        (socket-connection-reset-error ()
+          (log:debug "Client ~A [~A]: connection reset by peer" conn-id conn-url)
+          (close-conn conn))
+        (isys:ewouldblock ()
+          (log:debug "write-some-bytes: ewouldblock")
+          (register-write))
+        (isys:epipe ()
+          (log:debug "Client ~A [~A] got hangup on write" conn-id conn-url)
+          (close-conn conn))))))
 
 (defmethod fin ((c async-conn) &optional err)
   (with-slots (fin base conn connected read-buf conn-url) c
@@ -715,13 +722,6 @@
       (setf fin t)
       (try-write c))))
 
-(defmethod register-write ((c async-conn))
-  (with-slots (conn base write-registered) c
-    (when (not write-registered)
-      (when (socket-connected-p conn)
-        (set-io-handler base (socket-os-fd conn) :write (lambda (&rest args) (declare (ignore args)) (try-write c)))
-        (setf write-registered t)))))
-
 (defmethod push-to ((c async-conn) buf &key (start 0) (end (array-dimension buf 0)))
   (with-slots (write-buf) c
     (multiple-value-bind (buf1 start1 end1) (get-space write-buf (- end start))
@@ -729,7 +729,7 @@
         (when (> cw 0)
           (replace buf1 buf :start1 start1 :start2 start :end1 (+ start1 cw) :end2 (+ start cw))
           (allocate-space write-buf cw)
-          (register-write c))
+          (try-write c))
         cw))))
 
 (defmethod feed-connected ((c async-conn))
@@ -747,7 +747,8 @@
                      (with-slots (write-buf) connected
                        (if (empty-p read-buf)
                            (when fin
-                             (fin connected))
+                             (fin connected)
+                             (close-conn c :close t))
                            (multiple-value-bind (buf start end) (data-available read-buf)
                              (when (not (full-p write-buf))
                                (let ((cw (push-to connected buf :start start :end end)))
@@ -757,7 +758,7 @@
           (try-push))))))
 
 (defmethod try-read ((c async-conn))
-  (with-slots (fin conn base read-buf connected readed conn-id conn-url) c
+  (with-slots (fin conn base read-buf write-buf connected readed conn-id conn-url) c
     (when (and (not fin) (not (full-p read-buf)))
       (handler-case
         (multiple-value-bind (buf start end) (get-space read-buf)
@@ -773,13 +774,17 @@
         (socket-connection-reset-error ()
           (fin c (format nil "Client ~A [~A]: connection reset by peer" conn-id conn-url)))
         (end-of-file ()
-          (fin c (format nil "Client ~A [~A] produced end-of-file on a read" conn-id)))))))
+          (fin c (format nil "Client ~A [~A] produced end-of-file on a read" conn-id conn-url)))))))
 
 (defmethod initialize-instance :after ((c async-conn) &key &allow-other-keys)
   (when (not (slot-boundp c 'conn))
     (error "Connection must be specified!"))
   (with-slots (conn base conn-id) c
-    (set-io-handler base (socket-os-fd conn) :read  (lambda (&rest args) (declare (ignore args)) (try-read c)))
+    (set-io-handler base (socket-os-fd conn) :read
+      (lambda (&rest args)
+        (declare (ignore args))
+        (try-read c)))
+        ; (event-dispatch base :one-shot t)))
     (ignore-errors
       (multiple-value-bind (ip port) (remote-name conn)
         (setf conn-id (format nil "~A:~A" ip port)))))

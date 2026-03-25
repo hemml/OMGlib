@@ -1430,11 +1430,13 @@ if(!OMG.inServiceWorker) {
                         (*package* (find-package :omg)))
                     (if *current-session*
                         (setf (slot-value *current-session* 'last-active) (get-universal-time)))
-                    (ignore-errors (boot-f))
-                    (loop while (equal (ready-state ws) :open) do
-                      (sleep 60))
-                    (ignore-errors (close-connection ws))
-                    (ignore-errors (bt:destroy-thread *thread-to-kill*))))
+                    (ignore-errors (boot-f))))
+                    ; (loop while (open-stream-p (slot-value (getf env :RAW-BODY) 'stream)) do
+                    ;   ;;(describe (slot-value (getf env :RAW-BODY) 'stream))
+                    ;   (sleep 60))
+                    ; (log:info "STREAM CLOSED FOR ~A" sid)
+                    ; (ignore-errors (close-connection ws))
+                    ; (ignore-errors (bt:destroy-thread *thread-to-kill*))))
                 :name (concatenate 'string (symbol-name sid) "-BOOT")
                 :initial-bindings `((*thread-to-kill* . ,(bt:current-thread))))
               *omg-thread-list*)))
